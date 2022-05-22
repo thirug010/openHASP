@@ -58,6 +58,9 @@ class BaseTouch {
 #elif TOUCH_DRIVER == 0x6336
 #warning Building for FT6336
 #include "touch_driver_ft6336u.h"
+#elif TOUCH_DRIVER == 6236
+#warning Building for FT6236
+#include "touch_driver_ft6236u.h"
 #elif TOUCH_DRIVER == 0x0610
 #warning Building for STMPE610
 #include "touch_driver_stmpe610.h"
