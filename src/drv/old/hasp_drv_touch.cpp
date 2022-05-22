@@ -24,6 +24,8 @@
 #include "drv/old/hasp_drv_ft5206.h"
 #elif TOUCH_DRIVER == 0x6336
 #include "drv/old/hasp_drv_ft6336u.h"
+#elif TOUCH_DRIVER == 6236
+#include "drv/old/hasp_drv_ft6236u.h"
 #elif TOUCH_DRIVER == 0x0610
 #include "drv/old/hasp_drv_stmpe610.h"
 #else
@@ -73,7 +75,10 @@ void drv_touch_init(uint8_t rotation)
 
 #elif TOUCH_DRIVER == 0x6336
     FT6336U_init();
-
+   
+#elif TOUCH_DRIVER == 6236
+    FT6236U_init();
+   
 #elif TOUCH_DRIVER == 0x0610
     STMPE610_init();
 
@@ -107,6 +112,9 @@ static inline bool drv_touchpad_getXY(int16_t* touchX, int16_t* touchY)
 
 #elif TOUCH_DRIVER == 0x6336
     touched = FT6336U_getXY(&normal_x, &normal_y, false); // no debug
+
+#elif TOUCH_DRIVER == 6236
+    touched = FT6236U_getXY(&normal_x, &normal_y, false); // no debug
 
 #elif TOUCH_DRIVER == 0x0610
     touched = STMPE610_getXY(&normal_x, &normal_y, drv_touch_rotation, false); // no debug
