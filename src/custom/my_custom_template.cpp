@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 // USAGE: - Copy this file and rename it to my_custom.cpp
@@ -46,7 +46,7 @@ void custom_get_sensors(JsonDocument& doc)
     JsonObject sensor = doc.createNestedObject(F("Custom"));
 
     /* Key-Value pair of the sensor value */
-    sensor[F("Random")] = random(256);
+    sensor[F("Random")] = HASP_RANDOM(256);
 }
 
 void custom_topic_payload(const char* topic, const char* payload, uint8_t source){

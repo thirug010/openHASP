@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #if defined(ESP32)
@@ -9,6 +9,7 @@
 #include "esp_system.h"
 #include <rom/rtc.h> // needed to get the ResetInfo
 #include "driver/adc.h"
+#include "driver/ledc.h"
 #include "esp_adc_cal.h"
 #include "esp_efuse.h"
 
@@ -21,7 +22,7 @@
 
 #define BACKLIGHT_CHANNEL 0
 
-#if !defined(CONFIG_IDF_TARGET_ESP32S2)
+#if defined(CONFIG_IDF_TARGET_ESP32)
 uint8_t temprature_sens_read();
 #endif
 
@@ -80,7 +81,7 @@ static String esp32ResetReason(uint8_t cpuid)
             break; /**<13, RTC Watch dog Reset CPU*/
         case 14:
             resetReason += F("EXT_CPU");
-            break; /**<14, for APP CPU, reseted by PRO CPU*/
+            break; /**<14, for APP CPU, reset by PRO CPU*/
         case 15:
             resetReason += F("RTCWDT_BROWN_OUT");
             break; /**<15, Reset when the vdd voltage is not stable*/
@@ -108,7 +109,9 @@ Esp32Device::Esp32Device()
     _backlight_invert = (TFT_BACKLIGHT_ON == LOW);
     _backlight_power  = 1;
     _backlight_level  = 255;
-    _backlight_pin    = 255; // not TFT_BCKL because it is unkown at this stage
+    _backlight_pin    = 255; // not TFT_BCKL because it is unknown at this stage
+    _backlight_pending = false;
+    _backlight_fading = false;
 
     /* fill unique identifier with wifi mac */
     byte mac[6];
@@ -240,6 +243,22 @@ const char* Esp32Device::get_hardware_id()
     return _hardware_id.c_str();
 }
 
+bool Esp32Device::cb_backlight(const ledc_cb_param_t *param, void *user_arg) {
+    reinterpret_cast<Esp32Device*>(user_arg)->end_backlight_fade();
+    return false;
+}
+
+void Esp32Device::end_backlight_fade()
+{
+    if (_backlight_pending) {
+        _backlight_pending = false;
+        _backlight_fading = false;
+        update_backlight(_backlight_fade);
+    } else {
+        _backlight_fading = false;
+    }
+}
+
 void Esp32Device::set_backlight_pin(uint8_t pin)
 {
     _backlight_pin = pin;
@@ -253,7 +272,10 @@ void Esp32Device::set_backlight_pin(uint8_t pin)
         ledcSetup(BACKLIGHT_CHANNEL, BACKLIGHT_FREQUENCY, 10);
 #endif
         ledcAttachPin(pin, BACKLIGHT_CHANNEL);
-        update_backlight();
+        ledc_fade_func_install(0);
+        ledc_cbs_t cbs = {cb_backlight};
+        ledc_cb_register(LEDC_LOW_SPEED_MODE, (ledc_channel_t) BACKLIGHT_CHANNEL, &cbs, this);
+        update_backlight(false);
     } else {
         LOG_VERBOSE(TAG_GUI, F("Backlight  : Pin not set"));
     }
@@ -262,7 +284,7 @@ void Esp32Device::set_backlight_pin(uint8_t pin)
 void Esp32Device::set_backlight_invert(bool invert)
 {
     _backlight_invert = invert;
-    update_backlight();
+    update_backlight(false);
 }
 
 bool Esp32Device::get_backlight_invert()
@@ -273,7 +295,7 @@ bool Esp32Device::get_backlight_invert()
 void Esp32Device::set_backlight_level(uint8_t level)
 {
     _backlight_level = level;
-    update_backlight();
+    update_backlight(false);
 }
 
 uint8_t Esp32Device::get_backlight_level()
@@ -284,7 +306,7 @@ uint8_t Esp32Device::get_backlight_level()
 void Esp32Device::set_backlight_power(bool power)
 {
     _backlight_power = power;
-    update_backlight();
+    update_backlight(false);
 }
 
 bool Esp32Device::get_backlight_power()
@@ -292,17 +314,37 @@ bool Esp32Device::get_backlight_power()
     return _backlight_power != 0;
 }
 
-void Esp32Device::update_backlight()
+void Esp32Device::update_backlight(bool fade)
 {
     if(_backlight_pin < GPIO_NUM_MAX) {
 #if !defined(CONFIG_IDF_TARGET_ESP32S2)
         uint32_t duty = _backlight_power ? map(_backlight_level, 0, 255, 0, 1023) : 0;
         if(_backlight_invert) duty = 1023 - duty;
-        ledcWrite(BACKLIGHT_CHANNEL, duty); // ledChannel and value
+        if(_backlight_fading) {
+            _backlight_fade = fade;
+            _backlight_pending = true;
+        } else {
+            if(fade) {
+                _backlight_fading = true;
+                ledc_set_fade_time_and_start(LEDC_LOW_SPEED_MODE, (ledc_channel_t) BACKLIGHT_CHANNEL, duty, BACKLIGHT_FADEMS, LEDC_FADE_NO_WAIT);
+            } else {
+                ledcWrite(BACKLIGHT_CHANNEL, duty); // ledChannel and value
+            }
+        }
 #else
         uint32_t duty = _backlight_power ? map(_backlight_level, 0, 255, 0, 1023) : 0;
         if(_backlight_invert) duty = 1023 - duty;
-        ledcWrite(BACKLIGHT_CHANNEL, duty);     // ledChannel and value
+        if(_backlight_fading) {
+            _backlight_fade = fade;
+            _backlight_pending = true;
+        } else {
+            if(fade) {
+                _backlight_fading = true;
+                ledc_set_fade_time_and_start(LEDC_LOW_SPEED_MODE, (ledc_channel_t) BACKLIGHT_CHANNEL, duty, BACKLIGHT_FADEMS, LEDC_FADE_NO_WAIT);
+            } else {
+                ledcWrite(BACKLIGHT_CHANNEL, duty); // ledChannel and value
+            }
+        }
 #endif
     }
 
@@ -357,7 +399,11 @@ uint16_t Esp32Device::get_cpu_frequency()
 bool Esp32Device::is_system_pin(uint8_t pin)
 {
 // Also see esp32.cpp / hasp_gpio.cpp
-#if defined(ESP32S2) // Arduino NUM_DIGITAL_PINS = 48 (but espressif says it only has 46)
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+    if((pin >= 22) && (pin <= 25)) return true; // unavailable
+    if((pin >= 26) && (pin <= 32)) return true; // integrated SPI flash
+    if((pin >= 33) && (pin <= 37)) return true; // octal flash or PSram
+#elif defined(CONFIG_IDF_TARGET_ESP32S2)                          // Arduino NUM_DIGITAL_PINS = 48 (but espressif says it only has 46)
     // From https://hggh.github.io/esp32/2021/01/06/ESP32-S2-pinout.html, it looks like IO26 is for PSRAM
     // More info https://docs.espressif.com/projects/esp-idf/en/latest/esp32s2/_images/esp32-s2_saola1-pinout.jpg
     // Datasheet
@@ -370,17 +416,18 @@ bool Esp32Device::is_system_pin(uint8_t pin)
     // SPID = IO11 or IO35
     // SPIQ = IO13 or IO37
     // SPIWP = IO14 or IO38
-    if((pin >= 33) && (pin <= 38)) return true; // SPI flash
+    if((pin >= 33) && (pin <= 38)) return true;  // SPI flash
+    if(psramFound() && (pin == 26)) return true; // PSRAM. IO26 = SPICS1, the rest are shared with the flash
+#elif defined(CONFIG_IDF_TARGET_ESP32)
+    if((pin >= 6) && (pin <= 11)) return true;                    // integrated SPI flash
+#ifndef HASP_USE_GPIO37
+    if(pin == 37) return true;                                    // unavailable
+#endif
+#ifndef HASP_USE_GPIO38
+    if(pin == 38) return true;                                    // unavailable
+#endif
+    if(psramFound() && ((pin == 16) || (pin == 17))) return true; // PSRAM
 
-    if(psramFound()) {
-        if((pin == 26)) return true; // PSRAM. IO26 = SPICS1, the rest are shared with the flash
-    }
-#else
-    if((pin >= 6) && (pin <= 11)) return true;  // integrated SPI flash
-    if((pin == 37) || (pin == 38)) return true; // unavailable
-    if(psramFound()) {
-        if((pin == 16) || (pin == 17)) return true; // PSRAM
-    }
 #endif
     return false;
 }
@@ -425,7 +472,7 @@ void Esp32Device::get_info(JsonDocument& doc)
 
 void Esp32Device::get_sensors(JsonDocument& doc)
 {
-#if !defined(CONFIG_IDF_TARGET_ESP32S2)
+#if defined(CONFIG_IDF_TARGET_ESP32)
     JsonObject sensor        = doc.createNestedObject(F("ESP32"));
     uint32_t temp            = (temprature_sens_read() - 32) * 100 / 1.8;
     sensor[F("Temperature")] = serialized(String(1.0f * temp / 100, 2));
@@ -442,8 +489,9 @@ long Esp32Device::get_uptime()
 #if defined(LANBONL8)
 // #warning Building for Lanbon L8
 #include "dev/esp32/lanbonl8.h"
-#elif defined(M5STACK)
-  // #warning Building for M5Stack core2
+
+#elif defined(M5STACK) || defined(M5STACKLGFX)
+#warning Building for M5Stack core2
 #include "dev/esp32/m5stackcore2.h"
 #else
 dev::Esp32Device haspDevice;

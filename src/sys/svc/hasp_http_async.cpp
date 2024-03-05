@@ -1,8 +1,11 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 //#include "webServer.h"
 #include "hasplib.h"
+
+#if HASP_USE_HTTP_ASYNC > 0
+
 #include "ArduinoLog.h"
 
 #if defined(ARDUINO_ARCH_ESP32)
@@ -15,9 +18,7 @@
 
 #include "hasp_gui.h"
 #include "hasp_debug.h"
-#include "hasp_config.h"
 
-#if HASP_USE_HTTP_ASYNC > 0
 #include "sys/net/hasp_network.h"
 
 /* clang-format off */
@@ -332,7 +333,7 @@ void saveConfig()
                     haspSetConfig(settings.as<JsonObject>());
 
     #if HASP_USE_MQTT > 0
-                } else if(save == String(PSTR("mqtt"))) {
+                } else if(save == String(PSTR(FP_MQTT))) {
                     mqttSetConfig(settings.as<JsonObject>());
     #endif
 
@@ -344,7 +345,7 @@ void saveConfig()
                 } else if(save == String(PSTR("debug"))) {
                     debugSetConfig(settings.as<JsonObject>());
 
-                } else if(save == String(PSTR("http"))) {
+                } else if(save == String(PSTR(FP_HTTP))) {
                     httpSetConfig(settings.as<JsonObject>());
 
                     // Password might have changed
@@ -488,7 +489,7 @@ void webHandleAbout(AsyncWebServerRequest* request)
     String httpMessage((char*)0);
     httpMessage.reserve(HTTP_PAGE_SIZE);
 
-    httpMessage += F("<p><h3>openHASP</h3>Copyright&copy; 2019-2022 Francis Van Roie ");
+    httpMessage += F("<p><h3>openHASP</h3>Copyright&copy; 2019-2024 Francis Van Roie ");
     httpMessage += mitLicense;
     httpMessage += F("<p>Based on the previous work of the following open source developers.</p><hr>");
     httpMessage += F("<p><h3>HASwitchPlate</h3>Copyright&copy; 2019 Allen Derusha allen@derusha.org</b>");
@@ -935,7 +936,7 @@ int handleFileRead(AsyncWebServerRequest* request, String path)
 
         if(!strncasecmp(file.name(), configFile.c_str(), configFile.length())) {
             file.close();
-            DynamicJsonDocument settings(8 * 256);
+            DynamicJsonDocument settings(MAX_CONFIG_JSON_ALLOC_SIZE);
             DeserializationError error = configParseFile(configFile, settings);
 
             if(error) return 500; // Internal Server Error
@@ -1260,7 +1261,7 @@ void webHandleMqttConfig(AsyncWebServerRequest* request)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 void webHandleGuiConfig(AsyncWebServerRequest* request)
-{ // http://plate01/config/wifi
+{ // http://plate01/config/gui
     if(!httpIsAuthenticated(request, F("config/gui"))) return;
 
     {
@@ -1565,11 +1566,11 @@ void webHandleGpioConfig(AsyncWebServerRequest* request)
                             // case hasp_gpio_type_t::SERIAL_DIMMER:
                             //     httpMessage += F(D_GPIO_SERIAL_DIMMER);
                             //     break;
-                        case hasp_gpio_type_t::SERIAL_DIMMER_EU:
-                            httpMessage += F("L8-HD (EU)");
+                        case hasp_gpio_type_t::SERIAL_DIMMER_L8_HD_INVERTED:
+                            httpMessage += F("L8-HD");
                             break;
-                        case hasp_gpio_type_t::SERIAL_DIMMER_AU:
-                            httpMessage += F("L8-HD (AU)");
+                        case hasp_gpio_type_t::SERIAL_DIMMER_L8_HD:
+                            httpMessage += F("L8-HD (inv.)");
                             break;
 #endif
                         default:
@@ -1680,11 +1681,11 @@ void webHandleGpioOutput(AsyncWebServerRequest* request)
     // httpMessage += getOption(hasp_gpio_type_t::SERIAL_DIMMER, F(D_GPIO_SERIAL_DIMMER), selected);
 
 #if defined(LANBONL8)
-    selected = (conf.type == hasp_gpio_type_t::SERIAL_DIMMER_AU);
-    httpMessage += getOption(hasp_gpio_type_t::SERIAL_DIMMER_AU, F("L8-HD (AU)"), selected);
+    selected = (conf.type == hasp_gpio_type_t::SERIAL_DIMMER_L8_HD);
+    httpMessage += getOption(hasp_gpio_type_t::SERIAL_DIMMER_L8_HD, F("L8-HD"), selected);
 
-    selected = (conf.type == hasp_gpio_type_t::SERIAL_DIMMER_EU);
-    httpMessage += getOption(hasp_gpio_type_t::SERIAL_DIMMER_EU, F("L8-HD (EU)"), selected);
+    selected = (conf.type == hasp_gpio_type_t::SERIAL_DIMMER_L8_HD_INVERTED);
+    httpMessage += getOption(hasp_gpio_type_t::SERIAL_DIMMER_L8_HD_INVERTED, F("L8-HD (inv.)"), selected);
 #endif
 
     if(digitalPinHasPWM(request->arg((size_t)0).toInt())) {
@@ -2360,7 +2361,7 @@ bool httpGetConfig(const JsonObject& settings)
  *
  * Read the settings from json and sets the application variables.
  *
- * @note: data pixel should be formated to uint32_t RGBA. Imagemagick requirements.
+ * @note: data pixel should be formatted to uint32_t RGBA. Imagemagick requirements.
  *
  * @param[in] settings    JsonObject with the config settings.
  **/

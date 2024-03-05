@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 /* ********************************************************************************************
@@ -39,7 +39,7 @@ lv_obj_t* hasp_find_obj_from_parent_id(lv_obj_t* parent, uint8_t objid)
             for(uint16_t i = 0; i < tabcount; i++) {
                 lv_obj_t* tab = lv_tabview_get_tab(child, i);
                 // LOG_DEBUG(TAG_HASP, "Found tab %i", i);
-                if(tab->user_data.objid && objid == tab->user_data.objid) return tab; /* tab found, return it */
+                if(tab->user_data.id && objid == tab->user_data.id) return tab; /* tab found, return it */
 
                 /* check grandchildren */
                 grandchild = hasp_find_obj_from_parent_id(tab, objid);
@@ -109,8 +109,12 @@ void hasp_object_tree(const lv_obj_t* parent, uint8_t pageid, uint16_t level)
 /* Sends the data out on the state/pxby topic */
 void object_dispatch_state(uint8_t pageid, uint8_t btnid, const char* payload)
 {
-    char topic[16];
-    snprintf_P(topic, sizeof(topic), PSTR(HASP_OBJECT_NOTATION), pageid, btnid);
+    char topic[64];
+    char* pagename = haspPages.get_name(pageid);
+    if(pagename)
+        snprintf_P(topic, sizeof(topic), PSTR("%s.b%u"), pagename, btnid);
+    else
+        snprintf_P(topic, sizeof(topic), PSTR(HASP_OBJECT_NOTATION), pageid, btnid);
     dispatch_state_subtopic(topic, payload);
 }
 
@@ -158,7 +162,7 @@ void object_set_normalized_group_values(hasp_update_value_t& value)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Used in the dispatcher & hasp_new_object
+// Used in the dispatcher
 void hasp_process_attribute(uint8_t pageid, uint8_t objid, const char* attr, const char* payload, bool update)
 {
     if(lv_obj_t* obj = hasp_find_obj_from_page_id(pageid, objid)) {
@@ -174,7 +178,8 @@ void hasp_process_attribute(uint8_t pageid, uint8_t objid, const char* attr, con
 int hasp_parse_json_attributes(lv_obj_t* obj, const JsonObject& doc)
 {
     int i = 0;
-#if defined(WINDOWS) || defined(POSIX) || defined(ESP32)
+
+#if HASP_TARGET_PC || defined(ESP32)
     std::string v;
     v.reserve(64);
 
@@ -200,16 +205,18 @@ int hasp_parse_json_attributes(lv_obj_t* obj, const JsonObject& doc)
     return i;
 }
 
-static void object_add_task(lv_obj_t* obj, uint8_t pageid, uint8_t objid, lv_task_cb_t task_xcb, uint16_t interval)
+static void object_add_task(lv_obj_t* obj, lv_task_cb_t task_xcb, uint16_t interval)
 {
     hasp_task_user_data_t* user_data = (hasp_task_user_data_t*)lv_mem_alloc(sizeof(hasp_task_user_data_t));
     if(!user_data) return;
 
-    user_data->pageid   = pageid;
-    user_data->objid    = objid;
+    user_data->obj      = obj;
+    user_data->templ    = (char*)D_TIMESTAMP;
     user_data->interval = interval;
-    lv_task_t* task     = lv_task_create(task_xcb, 25, LV_TASK_PRIO_LOWEST, (void*)user_data);
-    (void)task; // unused
+    lv_task_t* task     = lv_task_create(task_xcb, interval, LV_TASK_PRIO_LOWEST, (void*)user_data);
+    lv_task_set_repeat_count(task, -1); // Infinite
+    lv_task_ready(task);                // trigger it
+    // (void)task; // unused
 }
 
 /**
@@ -263,28 +270,38 @@ void hasp_new_object(const JsonObject& config, uint8_t& saved_page_id)
         /* Create the object first */
 
         /* Validate type */
-        if(config[FPSTR(FP_OBJID)].isNull()) { // TODO: obsolete objid
+       // if(config[FPSTR(FP_OBJID)].isNull()) { // TODO: obsolete objid
             if(config[FPSTR(FP_OBJ)].isNull()) {
                 return; // comments
             } else {
                 sdbm = Parser::get_sdbm(config[FPSTR(FP_OBJ)].as<const char*>());
                 config.remove(FPSTR(FP_OBJ));
             }
-        } else {
-            LOG_WARNING(TAG_HASP, F(D_ATTRIBUTE_OBSOLETE D_ATTRIBUTE_INSTEAD), "objid",
-                        "obj"); // TODO: obsolete objid
-            sdbm = config[FPSTR(FP_OBJID)].as<uint8_t>();
-            config.remove(FPSTR(FP_OBJID));
-        }
+        // } else {
+        //     LOG_WARNING(TAG_HASP, F(D_ATTRIBUTE_OBSOLETE D_ATTRIBUTE_INSTEAD), "objid",
+        //                 "obj"); // TODO: obsolete objid
+        //     sdbm = config[FPSTR(FP_OBJID)].as<uint8_t>();
+        //     config.remove(FPSTR(FP_OBJID));
+        // }
 
         switch(sdbm) {
+                /* ----- Custom Objects ------ */
+            case LV_HASP_ALARM:
+            case HASP_OBJ_ALARM:
+                obj = lv_obj_create(parent_obj, NULL);
+                if(obj) obj->user_data.objid = LV_HASP_ALARM;
+                break;
+
             /* ----- Basic Objects ------ */
             case LV_HASP_BTNMATRIX:
             case HASP_OBJ_BTNMATRIX:
                 obj = lv_btnmatrix_create(parent_obj, NULL);
                 if(obj) {
                     lv_btnmatrix_set_recolor(obj, true);
-                    lv_obj_set_event_cb(obj, btnmatrix_event_handler);
+                    if(obj_check_type(parent_obj, LV_HASP_ALARM))
+                        lv_obj_set_event_cb(obj, alarm_event_handler);
+                    else
+                        lv_obj_set_event_cb(obj, btnmatrix_event_handler);
 
                     lv_btnmatrix_ext_t* ext = (lv_btnmatrix_ext_t*)lv_obj_get_ext_attr(obj);
                     btnmatrix_default_map   = ext->map_p; // store the static pointer to the default lvgl btnmap
@@ -337,7 +354,7 @@ void hasp_new_object(const JsonObject& config, uint8_t& saved_page_id)
                     lv_obj_set_event_cb(obj, generic_event_handler);
                     obj->user_data.objid = LV_HASP_LABEL;
 
-                    // object_add_task(obj, pageid, id, event_timer_clock, 1000);
+                    // if(id >= 250) object_add_task(obj, event_timer_clock, 1000);
                 }
                 break;
 
@@ -355,7 +372,6 @@ void hasp_new_object(const JsonObject& config, uint8_t& saved_page_id)
             case HASP_OBJ_IMG:
                 obj = lv_img_create(parent_obj, NULL);
                 if(obj) {
-                    lv_obj_set_click(obj, true);
                     lv_obj_set_event_cb(obj, generic_event_handler);
                     obj->user_data.objid = LV_HASP_IMAGE;
                 }
@@ -527,6 +543,7 @@ void hasp_new_object(const JsonObject& config, uint8_t& saved_page_id)
             case HASP_OBJ_LINE:
                 obj = lv_line_create(parent_obj, NULL);
                 if(obj) {
+                    lv_obj_set_style_local_line_width(obj, LV_LINE_PART_MAIN, LV_STATE_DEFAULT, 1);
                     lv_obj_set_event_cb(obj, delete_event_handler);
                     obj->user_data.objid = LV_HASP_LINE;
                 }
@@ -678,14 +695,14 @@ void hasp_new_object(const JsonObject& config, uint8_t& saved_page_id)
         // (E.g. a Button can be released out of it if it was being pressed)
         lv_obj_add_protect(obj, LV_PROTECT_PRESS_LOST);
         lv_obj_set_gesture_parent(obj, false);
+        lv_obj_set_click(obj, true);
 
         /* id tag the object */
         obj->user_data.id = id;
 
+#ifdef HASP_DEBUG
         uint8_t temp; // needed for debug tests
         (void)temp;
-
-#ifdef HASP_DEBUG
         /** testing start **/
         if(!hasp_find_id_from_obj(obj, &pageid, &temp)) {
             LOG_ERROR(TAG_HASP, F(D_OBJECT_LOST));

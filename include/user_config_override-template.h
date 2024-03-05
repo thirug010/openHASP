@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 /***************************************************
@@ -51,6 +51,7 @@
 /***************************************************
  *        Syslog Settings
  **************************************************/
+#define HASP_USE_SYSLOG 0
 #define SYSLOG_SERVER ""
 #define SYSLOG_PORT 514
 #define APP_NAME "HASP"
@@ -76,6 +77,7 @@
 // #define HASP_LANGUAGE pt_BR                       // Brazilian Portuguese
 // #define HASP_LANGUAGE pt_PT                       // Portuguese
 // #define HASP_LANGUAGE ro_RO                       // Romanian
+// #define HASP_LANGUAGE de_DE                       // German
 
 /***************************************************
  *        Web interface coloring
@@ -133,7 +135,7 @@
 // #define HASP_FONT_SIZE_4 48
 // #define HASP_FONT_SIZE_5 12
 
-#define LV_FONT_DEFAULT &HASP_FONT_1
+// #define LV_FONT_DEFAULT &HASP_FONT_1
 
 /***************************************************
  *        GPIO Settings
@@ -144,6 +146,7 @@
 /***************************************************
  *        Other Settings
  **************************************************/
+//#define HASP_USE_MDNS 0                             // Disable MDNS
 //#define HASP_USE_CUSTOM 1                           // Enable compilation of custom code from /src/custom
 //#define HASP_USE_HA                                 // Enable Home Assistant auto-discovery
 //#define HASP_START_CONSOLE 0                        // Disable starting of serial console at boot
@@ -154,5 +157,6 @@
 //#define LV_VDB_SIZE (32 * 1024U)                    // 32KiB of lvgl draw buffer (default 32)
 //#define HASP_DEBUG_OBJ_TREE                         // Output all objects to the log on page changes
 //#define HASP_LOG_LEVEL LOG_LEVEL_VERBOSE            // LOG_LEVEL_* can be DEBUG, VERBOSE, TRACE, INFO, WARNING, ERROR, CRITICAL, ALERT, FATAL, SILENT
+//#define HASP_LOG_TASKS                              // Also log the Taskname and watermark of ESP32 tasks
 
 #endif // HASP_USER_CONFIG_OVERRIDE_H

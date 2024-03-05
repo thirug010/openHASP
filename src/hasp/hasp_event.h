@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #ifndef HASP_EVENT_H
@@ -27,6 +27,7 @@ void msgbox_event_handler(lv_obj_t* obj, lv_event_t event);
 void cpicker_event_handler(lv_obj_t* obj, lv_event_t event);
 void calendar_event_handler(lv_obj_t* obj, lv_event_t event);
 void textarea_event_handler(lv_obj_t* obj, lv_event_t event);
+void alarm_event_handler(lv_obj_t* obj, lv_event_t event);
 
 // Other functions
 void event_reset_last_value_sent();

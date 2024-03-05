@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2021 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #include "hasplib.h"
@@ -9,7 +9,6 @@
 #include <StreamUtils.h>
 
 #include "hasp_debug.h"
-#include "hasp_config.h"
 #include "hasp_telnet.h"
 #include "hasp_http.h"
 
@@ -27,7 +26,7 @@ static WiFiServer* telnetServer;
 WiFiClient telnetClient;
 static WiFiServer* telnetServer;
 #else
-//#include <STM32Ethernet.h>
+// #include <STM32Ethernet.h>
 EthernetClient telnetClient;
 static EthernetServer telnetServer(23);
 #endif
@@ -210,7 +209,7 @@ static inline void telnetProcessData(char ch)
         case 8: // Backspace
             if(telnetInputIndex > 0) telnetInputIndex--;
             break;
-        case 13: // Cariage Return
+        case 13: // Carriage Return
             telnetProcessLine("");
             break;
         case 32 ... 250:
@@ -377,7 +376,18 @@ IRAM_ATTR void telnetLoop()
     /* Active Client: Process user input */
     if(telnetClient.connected()) {
         if(telnetConsole) {
-            while(telnetConsole->readKey()) {
+            while(int16_t key = telnetConsole->readKey()) {
+                switch(key) {
+                    case 0xf8:
+                    case KEY_CTRL('C'): // 0x03 = ^C = Cancel (Quit)
+                        telnetClientDisconnect();
+                        break;
+
+                    case 0xec:
+                    case KEY_CTRL('D'): // ^D = Disconnect (Logout)
+                        LOG_DEBUG(TAG_TELN, "Ctrl-D");
+                        break;
+                }
                 if(!telnetConsole) return; // the telnetConsole was destroyed
                 if(bufferedTelnetClient.available() <= 0) bufferedTelnetClient.flush(); // flush pending updates
             };
@@ -386,6 +396,9 @@ IRAM_ATTR void telnetLoop()
             telnetConsole = new ConsoleInput(&bufferedTelnetClient, HASP_CONSOLE_BUFFER);
             if(telnetConsole) {
                 telnetConsole->setLineCallback(telnetProcessLine);
+#ifdef HASP_DEBUG
+                telnetConsole->setDebug(true);
+#endif
             } else {
                 telnetClientDisconnect();
                 LOG_ERROR(TAG_TELN, F(D_TELNET_FAILED));
@@ -431,7 +444,7 @@ bool telnetGetConfig(const JsonObject& settings)
  *
  * Read the settings from json and sets the application variables.
  *
- * @note: data pixel should be formated to uint32_t RGBA. Imagemagick requirements.
+ * @note: data pixel should be formatted to uint32_t RGBA. Imagemagick requirements.
  *
  * @param[in] settings    JsonObject with the config settings.
  **/

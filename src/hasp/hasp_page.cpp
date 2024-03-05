@@ -1,9 +1,10 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #include "hasplib.h"
 
 #include <fstream>
+#include "hasp_anim.h"
 
 #if defined(ARDUINO)
 #include "StreamUtils.h" // For EEPromStream
@@ -53,7 +54,7 @@ void Page::swap(lv_obj_t* page, uint8_t id)
     // Delete previous page object
     if(prev_page_obj) {
         if(prev_page_obj == lv_scr_act()) {
-            lv_scr_load_anim(_pages[id], LV_SCR_LOAD_ANIM_NONE, 500, 0, false); // update page screen obj
+            my_scr_load_anim(_pages[id], LV_SCR_LOAD_ANIM_NONE, 500, 0, false); // update page screen obj
             lv_obj_del_async(prev_page_obj);
         } else
             lv_obj_del(prev_page_obj);
@@ -73,6 +74,8 @@ void Page::init(uint8_t start_page)
         _meta_data[i].prev = thispage == PAGE_START_INDEX ? HASP_NUM_PAGES : thispage - PAGE_START_INDEX;
         _meta_data[i].next = thispage == HASP_NUM_PAGES ? PAGE_START_INDEX : thispage + PAGE_START_INDEX;
         _meta_data[i].back = start_page;
+
+        set_name(i, NULL);
     }
 }
 
@@ -87,27 +90,33 @@ void Page::clear(uint8_t pageid)
     }
 }
 
-// void Page::set(uint8_t pageid)
-// {
-//     set(pageid, LV_SCR_LOAD_ANIM_NONE);
-// }
-
-void Page::set(uint8_t pageid, lv_scr_load_anim_t animation)
+void Page::set(uint8_t pageid, lv_scr_load_anim_t anim_type, uint32_t time, uint32_t delay)
 {
+    if(!is_valid(pageid)) return; // produces a log warning if not between 1 and 12
+
     lv_obj_t* page = get_obj(pageid);
-    if(!is_valid(pageid)) {
-        return;
-    } else if(!page) {
+    if(!page) {
+        // Invalid page object
         LOG_WARNING(TAG_HASP, F(D_HASP_INVALID_PAGE), pageid);
-    } else {
+
+    } else if(page == lv_scr_act()) {
+        // No change needed, just send current page again
         _current_page = pageid;
-        if(page != lv_scr_act()) {
-            LOG_TRACE(TAG_HASP, F(D_HASP_CHANGE_PAGE), pageid);
-            lv_scr_load_anim(page, animation, 500, 0, false);
+        dispatch_current_page();
+
+    } else if((anim_type != LV_SCR_LOAD_ANIM_NONE && time > 0) || delay > 0) {
+        // Change page after a delay or animation, don't publish it yet
+        my_scr_load_anim(page, anim_type, time, delay, false); // dispatches when animation ends
+
+    } else {
+        // No delay or animation set, update now
+        LOG_TRACE(TAG_HASP, F(D_HASP_CHANGE_PAGE), pageid);
+        lv_scr_load_anim(page, anim_type, time, delay, false);
+        _current_page = pageid;
+        dispatch_current_page();
 #if defined(HASP_DEBUG_OBJ_TREE)
-            hasp_object_tree(page, pageid, 0);
+        hasp_object_tree(page, pageid, 0);
 #endif
-        }
     }
 }
 
@@ -126,6 +135,11 @@ uint8_t Page::get_back(uint8_t pageid)
     return is_valid(pageid) ? _meta_data[pageid - PAGE_START_INDEX].back : 0;
 }
 
+char* Page::get_name(uint8_t pageid)
+{
+    return pageid <= HASP_NUM_PAGES ? _pagenames[pageid] : NULL;
+}
+
 void Page::set_next(uint8_t pageid, uint8_t nextid)
 {
     if(is_valid(pageid) && is_valid(nextid)) _meta_data[pageid - PAGE_START_INDEX].next = nextid;
@@ -141,19 +155,48 @@ void Page::set_back(uint8_t pageid, uint8_t backid)
     if(is_valid(pageid) && is_valid(backid)) _meta_data[pageid - PAGE_START_INDEX].back = backid;
 }
 
-void Page::next(lv_scr_load_anim_t animation)
+void Page::set_name(uint8_t pageid, const char* name)
 {
-    set(_meta_data[_current_page - PAGE_START_INDEX].next, animation);
+    if(pageid > HASP_NUM_PAGES) {
+        LOG_WARNING(TAG_HASP, F(D_HASP_INVALID_PAGE), pageid);
+        return;
+    }
+
+    LOG_DEBUG(TAG_HASP, F("%s - %d"), __FILE__, __LINE__);
+
+    if(_pagenames[pageid]) {
+        hasp_free(_pagenames[pageid]);
+        _pagenames[pageid] = NULL;
+    }
+
+    LOG_DEBUG(TAG_HASP, F("%s - %d"), __FILE__, __LINE__);
+    if(!name) return;
+    size_t size = strlen(name) + 1;
+
+    LOG_DEBUG(TAG_HASP, F("%s - %d"), __FILE__, __LINE__);
+    if(size > 1) {
+        _pagenames[pageid] = (char*)hasp_calloc(sizeof(char), size);
+        LOG_DEBUG(TAG_HASP, F("%s - %d"), __FILE__, __LINE__);
+        if(_pagenames[pageid] == NULL) return;
+        strncpy(_pagenames[pageid], name, size);
+        LOG_VERBOSE(TAG_HASP, F("%s"), _pagenames[pageid]);
+    }
+    LOG_DEBUG(TAG_HASP, F("%s - %d"), __FILE__, __LINE__);
 }
 
-void Page::prev(lv_scr_load_anim_t animation)
+void Page::next(lv_scr_load_anim_t anim_type, uint32_t time, uint32_t delay)
 {
-    set(_meta_data[_current_page - PAGE_START_INDEX].prev, animation);
+    set(_meta_data[_current_page - PAGE_START_INDEX].next, anim_type, time, delay);
 }
 
-void Page::back(lv_scr_load_anim_t animation)
+void Page::prev(lv_scr_load_anim_t anim_type, uint32_t time, uint32_t delay)
 {
-    set(_meta_data[_current_page - PAGE_START_INDEX].back, animation);
+    set(_meta_data[_current_page - PAGE_START_INDEX].prev, anim_type, time, delay);
+}
+
+void Page::back(lv_scr_load_anim_t anim_type, uint32_t time, uint32_t delay)
+{
+    set(_meta_data[_current_page - PAGE_START_INDEX].back, anim_type, time, delay);
 }
 
 uint8_t Page::get()
@@ -201,7 +244,11 @@ void Page::load_jsonl(const char* pagesfile)
     path[0] = '.';
     path[1] = '\0';
     strcat(path, pagesfile);
+#if defined(WINDOWS)
     path[1] = '\\';
+#elif defined(POSIX)
+    path[1] = '/';
+#endif
 
     LOG_TRACE(TAG_HASP, F("Loading %s from disk..."), path);
     std::ifstream f(path); // taking file as inputstream

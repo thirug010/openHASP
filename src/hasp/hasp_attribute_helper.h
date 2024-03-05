@@ -1,43 +1,305 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #include "hasplib.h"
 
-// the tag data is stored as SERIALIZED JSON data
-void my_obj_set_tag(lv_obj_t* obj, const char* tag)
+lv_task_t* my_obj_get_task(const lv_obj_t* obj)
 {
-    size_t len = tag ? strlen(tag) : 0;
+    lv_task_t* task = lv_task_get_next(NULL);
+    while(task) {
+        if(task->user_data) {
+            hasp_task_user_data_t* data = (hasp_task_user_data_t*)task->user_data;
+            if(data->obj == obj) return task;
+        }
+        task = lv_task_get_next(task);
+    }
+    return NULL;
+}
 
-    // release old tag
-    if(obj->user_data.tag) {
-        hasp_free(obj->user_data.tag);
-        obj->user_data.tag = NULL;
+lv_task_t* my_obj_new_task(lv_obj_t* obj)
+{
+    if(!obj) return NULL;
+
+    lv_task_t* task                  = NULL;
+    hasp_task_user_data_t* user_data = (hasp_task_user_data_t*)lv_mem_alloc(sizeof(hasp_task_user_data_t));
+    if(user_data) {
+        user_data->obj      = obj;
+        user_data->templ    = (char*)D_TIMESTAMP;
+        user_data->interval = 1000;
+        task = lv_task_create(event_timer_clock, user_data->interval, LV_TASK_PRIO_LOWEST, (void*)user_data);
+        if(task) {
+            lv_task_set_repeat_count(task, -1); // Infinite
+        } else {
+            lv_mem_free(user_data);
+        }
+
+        // lv_task_ready(task);                // trigger it
+        // (void)task; // unused
+    }
+    return task;
+}
+
+void my_obj_del_task(const lv_obj_t* obj)
+{
+    lv_task_t* task = my_obj_get_task(obj);
+    if(!task) return;
+
+    hasp_task_user_data_t* data = (hasp_task_user_data_t*)task->user_data;
+    if(data) {
+        if(data->templ != D_TIMESTAMP) hasp_free(data->templ);
+        lv_mem_free(data);
+    }
+    lv_task_del(task);
+}
+
+const char* my_obj_get_template(const lv_obj_t* obj)
+{
+    lv_task_t* task = my_obj_get_task(obj);
+    if(!task || !task->user_data) return NULL;
+
+    hasp_task_user_data_t* data = (hasp_task_user_data_t*)task->user_data;
+    return data->templ;
+}
+
+void my_obj_set_template(lv_obj_t* obj, const char* text)
+{
+    lv_task_t* task = my_obj_get_task(obj);
+    if(!task || !task->user_data) {
+        task = my_obj_new_task(obj);
+    }
+
+    hasp_task_user_data_t* data = (hasp_task_user_data_t*)task->user_data;
+    if(data->templ != D_TIMESTAMP) hasp_free(data->templ);
+    data->templ = NULL;
+    if(!text) return;
+
+    size_t size = strlen(text);
+    if(size == 0) return;
+
+    size++; // terminating \0 character
+    data->templ = (char*)hasp_calloc(sizeof(char), size);
+    if(data->templ)
+        strncpy(data->templ, text, size);
+    else
+        LOG_WARNING(TAG_ATTR, "Failed to allocate memory!");
+}
+
+// free the extended user_data when all properties are NULL
+static void my_prune_ext_tags(lv_obj_t* obj)
+{
+    if(!obj || !obj->user_data.ext) return;
+
+    hasp_ext_user_data_t* ext = (hasp_ext_user_data_t*)obj->user_data.ext;
+    if(!ext->action && !ext->swipe && !ext->tag) {
+        hasp_free(ext);
+        obj->user_data.ext = NULL;
+    }
+}
+
+// create extended user_data properties object
+static hasp_ext_user_data_t* my_create_ext_tags(lv_obj_t* obj)
+{
+    void* ext          = hasp_calloc(1, sizeof(hasp_ext_user_data_t));
+    obj->user_data.ext = ext;
+    return (hasp_ext_user_data_t*)ext;
+}
+
+void my_obj_set_tag(lv_obj_t* obj, const char* payload)
+{
+    hasp_ext_user_data_t* ext = (hasp_ext_user_data_t*)obj->user_data.ext;
+
+    // extended tag exists, free old tag
+    if(ext && ext->tag) {
+        hasp_free(ext->tag);
+        ext->tag = NULL;
     }
 
     // new tag is blank
-    if(tag == NULL || tag[0] == '\0') return;
+    if(payload == NULL || payload[0] == '\0') goto prune;
 
-    // create new tag
-    {
+    // create new extended tags
+    if(!ext) ext = my_create_ext_tags(obj);
+
+    if(ext) {
+        // create new tag
         StaticJsonDocument<512> doc;
+        size_t len = payload ? strlen(payload) : 0;
 
         // check if it is a proper JSON object
-        DeserializationError error = deserializeJson(doc, tag, len);
-        if(error != DeserializationError::Ok) doc.set(tag); // use tag as-is
+        DeserializationError res = deserializeJson(doc, payload, len);
+        if(res != DeserializationError::Ok) doc.set(payload); // use tag as-is
 
         const size_t size = measureJson(doc) + 1;
         if(char* str = (char*)hasp_malloc(size)) {
-            len                = serializeJson(doc, str, size); // tidy-up the json object
-            obj->user_data.tag = (void*)str;
+            len      = serializeJson(doc, str, size); // tidy-up the json object
+            ext->tag = str;
             LOG_VERBOSE(TAG_ATTR, "new json: %s", str);
+            return; // no error & no prune
         }
     }
+
+error:
+    LOG_WARNING(TAG_ATTR, D_ERROR_OUT_OF_MEMORY); // ext or str was NULL
+
+prune:
+    my_prune_ext_tags(obj); // delete extended data if all extended properties are NULL
 }
 
 // the tag data is stored as SERIALIZED JSON data
 const char* my_obj_get_tag(lv_obj_t* obj)
 {
-    return (char*)obj->user_data.tag;
+    if(!obj) return NULL;
+    hasp_ext_user_data_t* ext = (hasp_ext_user_data_t*)obj->user_data.ext;
+    return ext ? ext->tag : NULL;
+}
+
+// the action data is stored as SERIALIZED JSON data
+void my_obj_set_action(lv_obj_t* obj, const char* payload)
+{
+    hasp_ext_user_data_t* ext = (hasp_ext_user_data_t*)obj->user_data.ext;
+
+    // extended tag exists, free old tag
+    if(ext && ext->action) {
+        hasp_free(ext->action);
+        ext->action = NULL;
+    }
+
+    // new tag is blank
+    if(payload == NULL || payload[0] == '\0') goto prune;
+
+    // create new extended tags
+    if(!ext) ext = my_create_ext_tags(obj);
+
+    // create new action
+    if(ext) {
+        StaticJsonDocument<512> doc;
+        size_t len  = payload ? strlen(payload) : 0;
+        ext->action = NULL;
+
+        // Backwards compatibility
+        if(uint8_t page = Parser::get_action_id(payload)) {
+            char json[64] = "{\"up\":\"page ";
+            switch(page) {
+                case 0:
+                    LOG_WARNING(TAG_ATTR, "Invalid parameter");
+                    goto prune;
+                case HASP_NUM_PAGE_PREV:
+                    strcat(json, "prev");
+                    break;
+                case HASP_NUM_PAGE_NEXT:
+                    strcat(json, "next");
+                    break;
+                case HASP_NUM_PAGE_BACK:
+                    strcat(json, "back");
+                    break;
+                default: {
+                    char str[64];
+                    itoa(page, str, DEC);
+                    strcat(json, str);
+                }
+            }
+            strcat(json, "\"}");
+            deserializeJson(doc, json);
+        } else {
+            // Check for new json action format
+            DeserializationError res = deserializeJson(doc, payload, len);
+            if(res != DeserializationError::Ok) {
+                LOG_WARNING(TAG_ATTR, "Invalid parameter");
+                goto prune;
+            }
+        }
+
+        const size_t size = measureJson(doc) + 1;
+        if(char* str = (char*)hasp_malloc(size)) {
+            size_t len  = serializeJson(doc, str, size); // tidy-up the json object
+            ext->action = str;
+            LOG_VERBOSE(TAG_ATTR, "new json: %s", str);
+            return; // no error & no prune
+        }
+    }
+
+error:
+    LOG_WARNING(TAG_ATTR, D_ERROR_OUT_OF_MEMORY); // ext or str was NULL
+
+prune:
+    my_prune_ext_tags(obj); // delete extended data if all extended properties are NULL
+}
+
+// the tag data is stored as SERIALIZED JSON data
+const char* my_obj_get_action(lv_obj_t* obj)
+{
+    if(!obj) return NULL;
+    hasp_ext_user_data_t* ext = (hasp_ext_user_data_t*)obj->user_data.ext;
+    return ext ? ext->action : NULL;
+}
+
+// the swipe data is stored as SERIALIZED JSON data
+void my_obj_set_swipe(lv_obj_t* obj, const char* payload)
+{
+    hasp_ext_user_data_t* ext     = (hasp_ext_user_data_t*)obj->user_data.ext;
+    static const char* _swipejson = R"({"down":"page back","left":"page next","right":"page prev","up":"page back"})";
+
+    // extended tag exists, free old tag if it's not the const _swipejson
+    if(ext) {
+        if(ext->swipe != _swipejson) hasp_free((void*)ext->swipe);
+        ext->swipe = NULL;
+    }
+
+    // new tag is blank
+    if(payload == NULL || payload[0] == '\0') goto prune;
+
+    // create new extended tags
+    if(!ext) ext = my_create_ext_tags(obj);
+
+    if(ext) {
+        if(Parser::is_true(payload)) {
+            ext->swipe = _swipejson; // backwards compatibility: use static action
+            return;                  // no error & no prune
+        }
+
+        // create new action
+        StaticJsonDocument<512> doc;
+        size_t len = payload ? strlen(payload) : 0;
+        ext->swipe = NULL;
+
+        // check if it is a proper JSON object
+        DeserializationError res = deserializeJson(doc, payload, len);
+        if(res != DeserializationError::Ok) {
+            LOG_WARNING(TAG_ATTR, "Invalid parameter");
+            goto prune;
+        }
+        if(doc.isNull()) goto prune;
+        if(doc.is<bool>() || doc.is<uint8_t>()) {
+            if(doc.as<bool>()) { // backwards compatibility: use static action
+                ext->swipe = _swipejson;
+                return; // no error & no prune
+            } else {
+                goto prune;
+            }
+        }
+
+        const size_t size = measureJson(doc) + 1;
+        if(char* str = (char*)hasp_malloc(size)) {
+            size_t len = serializeJson(doc, str, size); // tidy-up the json object
+            ext->swipe = str;
+            LOG_VERBOSE(TAG_ATTR, "new json: %s", str);
+            return; // no error & no prune
+        }
+    }
+
+error:
+    LOG_WARNING(TAG_ATTR, D_ERROR_OUT_OF_MEMORY); // ext or str was NULL
+
+prune:
+    my_prune_ext_tags(obj); // delete extended data if all extended properties are NULL
+}
+
+// the tag data is stored as SERIALIZED JSON data
+const char* my_obj_get_swipe(lv_obj_t* obj)
+{
+    if(!obj) return NULL;
+    hasp_ext_user_data_t* ext = (hasp_ext_user_data_t*)obj->user_data.ext;
+    return ext ? ext->swipe : NULL;
 }
 
 lv_label_align_t my_textarea_get_text_align(lv_obj_t* ta)
@@ -225,7 +487,7 @@ static void my_label_set_text(lv_obj_t* label, const char* text)
 
         switch(hash) {
             case ATTR_TEXT_MAC:
-                if(len == 4) break;
+                if(len == 5) static_text = haspDevice.get_hardware_id();
                 break;
 
 #if HASP_USE_WIFI > 0
@@ -346,6 +608,22 @@ static inline void my_btn_set_text(lv_obj_t* obj, const char* value)
 }
 
 /**
+ * Get the value_str for an object part and state.
+ * @param obj pointer to a object
+ * @param result text '\0' terminated character string.
+ */
+const char* my_obj_get_value_str_text(lv_obj_t* obj, uint8_t part, lv_state_t state)
+{
+    lv_state_t old_state = lv_obj_get_state(obj, part);
+    lv_obj_set_state(obj, state);
+    lv_obj_refresh_style(obj, part, LV_STYLE_VALUE_STR);
+    const char* value_str_p = lv_obj_get_style_value_str(obj, part);
+    lv_obj_set_state(obj, old_state);
+    lv_obj_refresh_style(obj, part, LV_STYLE_VALUE_STR);
+    return value_str_p;
+}
+
+/**
  * Set a new value_str for an object. Memory will be allocated to store the text by the object.
  * @param obj pointer to a object
  * @param text '\0' terminated character string. NULL to refresh with the current text.
@@ -353,68 +631,50 @@ static inline void my_btn_set_text(lv_obj_t* obj, const char* value)
 void my_obj_set_value_str_text(lv_obj_t* obj, uint8_t part, lv_state_t state, const char* text)
 {
     //  LOG_VERBOSE(TAG_ATTR, F("%s %d"), __FILE__, __LINE__);
+    lv_state_t old_state = lv_obj_get_state(obj, part);
 
-    const void* value_str_p = lv_obj_get_style_value_str(obj, part);
-    lv_obj_invalidate(obj);
-
-    if(text == NULL || text[0] == 0) {
-        // LOG_VERBOSE(TAG_ATTR, F("%s %d"), __FILE__, __LINE__);
-        lv_obj_set_style_local_value_str(obj, part, state, NULL);
-        lv_mem_free(value_str_p);
-        // LOG_VERBOSE(TAG_ATTR, F("%s %d"), __FILE__, __LINE__);
-        return;
+    // the lower priority state to check inheritance of the value_str against
+    lv_state_t prev_state;
+    switch(state) {
+        case LV_STATE_CHECKED:
+        case(LV_STATE_PRESSED + LV_STATE_DEFAULT):
+        case(LV_STATE_DISABLED + LV_STATE_DEFAULT):
+            prev_state = LV_STATE_DEFAULT;
+            break;
+        case(LV_STATE_DISABLED + LV_STATE_CHECKED):
+        case(LV_STATE_PRESSED + LV_STATE_CHECKED):
+            prev_state = LV_STATE_CHECKED;
+            break;
     }
 
-    LV_ASSERT_STR(text);
-
-    if(value_str_p == NULL) {
-        /*Get the size of the text*/
-        size_t len = strlen(text) + 1;
-
-        /*Allocate space for the new text*/
-        //   LOG_VERBOSE(TAG_ATTR, F("%s %d"), __FILE__, __LINE__);
-        value_str_p = (char*)lv_mem_alloc(len);
-        LV_ASSERT_MEM(value_str_p);
-        if(value_str_p == NULL) return;
-
-        // LOG_VERBOSE(TAG_ATTR, F("%s %d"), __FILE__, __LINE__);
-        strncpy((char*)value_str_p, text, len);
-        lv_obj_set_style_local_value_str(obj, part, state, (char*)value_str_p);
-        // LOG_VERBOSE(TAG_ATTR, F("%s %d"), __FILE__, __LINE__);
-        return;
+    const char* prev_value_str_p = NULL;
+    if(state != LV_STATE_DEFAULT) {
+        prev_value_str_p = my_obj_get_value_str_text(obj, part, prev_state);
     }
 
-    // lv_obj_set_style_local_value_str(obj, part, state, str_p);
+    // The value_str pointer of the current state to check inheritance
+    lv_obj_set_state(obj, state);
+    lv_obj_refresh_style(obj, part, LV_STYLE_VALUE_STR);
+    const char* curr_value_str_p = lv_obj_get_style_value_str(obj, part);
 
-    if(value_str_p == text) {
-        /*If set its own text then reallocate it (maybe its size changed)*/
-        LOG_DEBUG(TAG_ATTR, "%s %d", __FILE__, __LINE__);
-        return; // don't touch the data
-
-        // value_str_p = lv_mem_realloc(value_str_p, strlen(text) + 1);
-
-        // LV_ASSERT_MEM(value_str_p);
-        // if(value_str_p == NULL) return;
-    } else {
-        /*Free the old text*/
-        if(value_str_p != NULL) {
-            //        LOG_DEBUG(TAG_ATTR, F("%s %d"), __FILE__, __LINE__);
-            lv_mem_free(value_str_p);
-            value_str_p = NULL;
-            //        LOG_DEBUG(TAG_ATTR, F("%s %d"), __FILE__, __LINE__);
-        }
-
-        /*Get the size of the text*/
-        size_t len = strlen(text) + 1;
-
-        /*Allocate space for the new text*/
-        value_str_p = lv_mem_alloc(len);
-        LV_ASSERT_MEM(value_str_p);
-        if(value_str_p != NULL) strcpy((char*)value_str_p, text);
-        lv_obj_set_style_local_value_str(obj, part, state, (char*)value_str_p);
+    // Only free if there is no value_str state inheritance
+    if(prev_value_str_p != curr_value_str_p && curr_value_str_p != NULL) {
+        LOG_DEBUG(TAG_ATTR, "Releasing %s", curr_value_str_p);
+        lv_mem_free(curr_value_str_p);
     }
 
-    // LOG_VERBOSE(TAG_ATTR, F("%s %d"), __FILE__, __LINE__);
+    /*Get the size of the new text*/
+    size_t len = 0;
+    if(text != NULL && text[0] != '\0') len = strlen(text) + 1;
+
+    /*Allocate space for the new text*/
+    char* str_p = NULL;
+    if(len > 0) str_p = (char*)lv_mem_alloc(len);
+    if(str_p != NULL) strncpy(str_p, text, len);
+    lv_obj_set_style_local_value_str(obj, part, state, str_p);
+
+    lv_obj_set_state(obj, old_state);
+    lv_obj_refresh_style(obj, part, LV_STYLE_VALUE_STR);
 }
 
 void my_list_set_options(lv_obj_t* obj, const char* payload)
@@ -661,7 +921,7 @@ static bool attribute_lookup_lv_property(uint16_t hash, uint8_t * prop)
     for(uint32_t i = 0; i < sizeof(props) / sizeof(props[0]); i++) {
         if(props[i].hash == hash) {
             *prop = props[1].prop;
-            LOG_WARNING(TAG_ATTR, F("%d found and has propery %d"), hash, props[i].prop);
+            LOG_WARNING(TAG_ATTR, F("%d found and has property %d"), hash, props[i].prop);
             return true;
         }
     }

@@ -1,10 +1,10 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 /* ===========================================================================
 
 - LOG_FATAL() - A fatal exception is caught, the program should halt with while(1){}
-- LOG_ERROR() - An important but non-fatal error occured, this error should be checked and not ignored
+- LOG_ERROR() - An important but non-fatal error occurred, this error should be checked and not ignored
 - LOG_WARNING() - Send at the end of a function to indicate failure of the sub process, can be ignored
 
 - LOG_TRACE() - Information at the START of an action to notify another function is now running
@@ -16,7 +16,8 @@
 #include "hasp_conf.h"
 #include "ConsoleInput.h"
 #include "lvgl.h"
-//#include "time.h"
+// #include "time.h"
+#include <StreamUtils.h>
 
 #if defined(ARDUINO_ARCH_ESP8266)
 #include <sntp.h> // sntp_servermode_dhcp()
@@ -24,7 +25,9 @@
 #include <WiFiUdp.h>
 #elif defined(ARDUINO_ARCH_ESP32)
 #include <WiFi.h>
+#if HASP_USE_SYSLOG > 0
 #include <WiFiUdp.h>
+#endif
 #elif defined(STM32F4xx) || defined(STM32F7xx)
 #include <time.h>
 #endif
@@ -44,7 +47,6 @@
 #endif
 
 #if HASP_USE_SYSLOG > 0
-#include <WiFiUdp.h>
 
 #ifndef SYSLOG_SERVER
 #define SYSLOG_SERVER ""
@@ -69,7 +71,8 @@ uint8_t debugSyslogFacility = 0;
 uint8_t debugSyslogProtocol = 0;
 
 // A UDP instance to let us send and receive packets over UDP
-WiFiUDP* syslogClient = NULL;
+WiFiUDP* syslogClient                      = NULL;
+WriteBufferingStream* bufferedSyslogClient = NULL;
 #define SYSLOG_PROTO_IETF 0
 
 // Create a new syslog instance with LOG_KERN facility
@@ -129,7 +132,11 @@ void debugStartSyslog()
 
         if(syslogClient) {
             if(syslogClient->beginPacket(debugSyslogHost, debugSyslogPort)) {
-                Log.registerOutput(2, syslogClient, HASP_LOG_LEVEL, true);
+                if(!bufferedSyslogClient) bufferedSyslogClient = new WriteBufferingStream(*syslogClient, 256);
+                if(!bufferedSyslogClient)
+                    Log.registerOutput(2, bufferedSyslogClient, HASP_LOG_LEVEL, true);
+                else
+                    Log.registerOutput(2, syslogClient, HASP_LOG_LEVEL, true);
                 LOG_INFO(TAG_SYSL, F(D_SERVICE_STARTED));
             }
         } else {
@@ -185,7 +192,7 @@ bool debugGetConfig(const JsonObject& settings)
  *
  * Read the settings from json and sets the application variables.
  *
- * @note: data pixel should be formated to uint32_t RGBA. Imagemagick requirements.
+ * @note: data pixel should be formatted to uint32_t RGBA. Imagemagick requirements.
  *
  * @param[in] settings    JsonObject with the config settings.
  **/
@@ -252,13 +259,13 @@ size_t debugHistoryIndex(size_t num)
 void debugShowHistory()
 {
     size_t num = debugHistorycount();
-    Serial.println();
+    HASP_SERIAL.println();
     for(int i = 0; i <= num; i++) {
-        Serial.print("[");
-        Serial.print(i);
-        Serial.print("] ");
+        HASP_SERIAL.print("[");
+        HASP_SERIAL.print(i);
+        HASP_SERIAL.print("] ");
         size_t pos = debugHistoryIndex(i);
-        if(pos < sizeof(serialInputBuffer)) Serial.println((char *)(serialInputBuffer + pos));
+        if(pos < sizeof(serialInputBuffer)) HASP_SERIAL.println((char *)(serialInputBuffer + pos));
     }
 }
 
@@ -344,6 +351,10 @@ void debugPrintSuffix(uint8_t tag, int level, Print* _logOutput)
     if(syslogClient && _logOutput == syslogClient) {
         syslogClient->endPacket();
         return;
+    } else if(bufferedSyslogClient && _logOutput == bufferedSyslogClient) {
+        bufferedSyslogClient->flush();
+        syslogClient->endPacket();
+        return;
     }
 #endif
 
@@ -362,33 +373,34 @@ void debugPrintSuffix(uint8_t tag, int level, Print* _logOutput)
 }
 
 // Start Serial Port at correct
-void debugStartSerial()
+bool debugStartSerial()
 {
     if(debugSerialBaud < 0) {
         LOG_WARNING(TAG_DEBG, F(D_SERVICE_DISABLED " (%u Bps)"), debugSerialBaud);
-        //  return;
+        return false;
     }
 
     uint32_t baudrate = debugSerialBaud;
-    if(baudrate < 9600) baudrate = SERIAL_SPEED;
+    if(baudrate < 9600) baudrate = SERIAL_SPEED; // 9600 baud minimum
 
 #if defined(STM32F4xx) || defined(STM32F7xx)
-#ifndef STM32_SERIAL1  // Define what Serial port to use for log output
-    Serial.setRx(PA3); // User Serial2
-    Serial.setTx(PA2);
+#ifndef STM32_SERIAL1       // Define what Serial port to use for log output
+    HASP_SERIAL.setRx(PA3); // User Serial2
+    HASP_SERIAL.setTx(PA2);
 #endif
 #endif
 
-    Serial.begin(baudrate); /* prepare for possible serial debug */
+    HASP_SERIAL.begin(baudrate); /* prepare for possible serial debug */
     delay(10);
-    Log.registerOutput(0, &Serial, HASP_LOG_LEVEL, true); // LOG_LEVEL_VERBOSE
+    Log.registerOutput(0, &HASP_SERIAL, HASP_LOG_LEVEL, true); // LOG_LEVEL_VERBOSE
 
-    Serial.println();
-    debugPrintHaspHeader(&Serial);
-    Serial.flush();
+    HASP_SERIAL.println();
+    debugPrintHaspHeader(&HASP_SERIAL);
+    HASP_SERIAL.flush();
 
     LOG_INFO(TAG_DEBG, F(D_SERVICE_STARTED " @ %u bps"), debugSerialBaud);
     LOG_INFO(TAG_DEBG, F(D_INFO_ENVIRONMENT ": " PIOENV));
+    return true;
 }
 
 // Do NOT call Log function before debugSetup is called
@@ -423,12 +435,12 @@ void printLocalTime()
     timeinfo = localtime(&rawtime);
 
     strftime(buffer, sizeof(buffer), "%b %d %H:%M:%S.", timeinfo);
-    Serial.println(buffer);
+    HASP_SERIAL.println(buffer);
     // struct tm timeinfo;
     // time_t now = time(nullptr);
 
     // Serial-.print(ctime(&now));
-    // Serial.print(&timeinfo, " %d %B %Y %H:%M:%S ");
+    // HASP_SERIAL.print(&timeinfo, " %d %B %Y %H:%M:%S ");
 
 #if LWIP_VERSION_MAJOR > 1
 
@@ -437,13 +449,13 @@ void printLocalTime()
         IPAddress sntp   = *sntp_getserver(i);
         const char* name = sntp_getservername(i);
         if(sntp.isSet()) {
-            Serial.printf("sntp%d:     ", i);
+            HASP_SERIAL.printf("sntp%d:     ", i);
             if(name) {
-                Serial.printf("%s (%s) ", name, sntp.toString().c_str());
+                HASP_SERIAL.printf("%s (%s) ", name, sntp.toString().c_str());
             } else {
-                Serial.printf("%s ", sntp.toString().c_str());
+                HASP_SERIAL.printf("%s ", sntp.toString().c_str());
             }
-            Serial.printf("IPv6: %s Reachability: %o\n", sntp.isV6() ? D_YES : D_NO, sntp_getreachability(i));
+            HASP_SERIAL.printf("IPv6: %s Reachability: %o\n", sntp.isV6() ? D_YES : D_NO, sntp_getreachability(i));
         }
     }
 #endif

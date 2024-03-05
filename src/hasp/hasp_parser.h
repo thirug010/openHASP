@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #ifndef HASP_PARSER_H
@@ -9,6 +9,7 @@
 class Parser {
 
   public:
+    static uint8_t haspPayloadToPageid(const char* payload);
     static void ColorToHaspPayload(lv_color_t color, char* payload, size_t len);
     static bool haspPayloadToColor(const char* payload, lv_color32_t& color);
     static bool get_event_state(uint8_t eventid);

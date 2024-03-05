@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #ifndef HASP_WIFI_H
@@ -24,7 +24,6 @@ void wifi_get_statusupdate(char* buffer, size_t len);
 void wifi_get_info(JsonDocument& doc);
 const char* wifi_get_ssid();
 const char* wifi_get_ip_address();
-void wifi_run_scripts();
 
 #if HASP_USE_CONFIG > 0
 bool wifiGetConfig(const JsonObject& settings);
@@ -37,9 +36,9 @@ bool wifiSetConfig(const JsonObject& settings);
 
 #ifndef WIFI_PASSWORD
 #ifndef WIFI_PASSW
-#define WIFI_PASSWORD "";
+#define WIFI_PASSWORD ""
 #else
-#define WIFI_PASSWORD WIFI_PASSW;
+#define WIFI_PASSWORD WIFI_PASSW
 #endif
 #endif
 

@@ -1,10 +1,19 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #ifndef HASP_DISPATCH_H
 #define HASP_DISPATCH_H
 
 #include "hasplib.h"
+// #include "freertos/queue.h"
+
+// QueueHandle_t message_queue;
+// typedef struct
+// {
+//     char* topic;   //[64];
+//     char* payload; //[512];
+//     uint source;
+// } dispatch_message_t;
 
 struct dispatch_conf_t
 {
@@ -54,14 +63,16 @@ void dispatch_parse_jsonl(Stream& stream, uint8_t& saved_page_id);
 #else
 void dispatch_parse_jsonl(std::istream& stream, uint8_t& saved_page_id);
 #endif
+bool dispatch_json_variant(JsonVariant& json, uint8_t& savedPage, uint8_t source);
 
 void dispatch_clear_page(const char* page);
 void dispatch_json_error(uint8_t tag, DeserializationError& jsonError);
 
-void dispatch_set_page(uint8_t pageid, lv_scr_load_anim_t effectid);
+void dispatch_set_page(uint8_t pageid, lv_scr_load_anim_t animation, uint32_t time, uint32_t delay);
 void dispatch_page_next(lv_scr_load_anim_t effectid);
 void dispatch_page_prev(lv_scr_load_anim_t effectid);
 void dispatch_page_back(lv_scr_load_anim_t effectid);
+void dispatch_page(const char*, const char* payload, uint8_t source);
 
 bool dispatch_factory_reset();
 void dispatch_reboot(bool saveConfig);
@@ -76,8 +87,8 @@ void dispatch_send_sensordata(const char*, const char*, uint8_t source);
 void dispatch_idle_state(uint8_t state);
 void dispatch_calibrate(const char*, const char*, uint8_t source);
 void dispatch_antiburn(const char*, const char* payload, uint8_t source);
-void dispatch_wakeup();
-void dispatch_exec(const char*, const char* payload, uint8_t source);
+void dispatch_wakeup(uint8_t source);
+void dispatch_run_script(const char*, const char* payload, uint8_t source);
 void dispatch_config(const char* topic, const char* payload, uint8_t source);
 
 void dispatch_normalized_group_values(hasp_update_value_t& value);
@@ -89,6 +100,7 @@ void dispatch_state_val(const char* topic, hasp_event_t eventid, int32_t val);
 void dispatch_state_antiburn(hasp_event_t eventid);
 
 /* ===== Getter and Setter Functions ===== */
+void dispatch_get_discovery_data(JsonDocument& doc);
 
 /* ===== Read/Write Configuration ===== */
 

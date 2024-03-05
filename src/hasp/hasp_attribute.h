@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #ifndef HASP_ATTRIBUTE_H
@@ -16,11 +16,16 @@ lv_chart_series_t* my_chart_get_series(lv_obj_t* chart, uint8_t ser_num);
 
 void my_obj_set_value_str_text(lv_obj_t* obj, uint8_t part, lv_state_t state, const char* text);
 void my_obj_set_tag(lv_obj_t* obj, const char* tag);
+void my_obj_set_action(lv_obj_t* obj, const char* tag);
+void my_obj_set_swipe(lv_obj_t* obj, const char* tag);
 const char* my_obj_get_tag(lv_obj_t* obj);
+const char* my_obj_get_action(lv_obj_t* obj);
+const char* my_obj_get_swipe(lv_obj_t* obj);
 void my_btnmatrix_map_clear(lv_obj_t* obj);
 void my_msgbox_map_clear(lv_obj_t* obj);
 void my_line_clear_points(lv_obj_t* obj);
 void my_image_release_resources(lv_obj_t* obj);
+void my_obj_del_task(const lv_obj_t* obj);
 
 void hasp_process_obj_attribute(lv_obj_t* obj, const char* attr_p, const char* payload, bool update);
 
@@ -391,6 +396,7 @@ _HASP_ATTRIBUTE(SCALE_END_LINE_WIDTH, scale_end_line_width, lv_style_int_t)
 #define ATTR_NEXT 60915
 #define ATTR_PREV 21587
 #define ATTR_BACK 57799
+#define ATTR_NAME 44331
 
 /* Object Attributes */
 #define ATTR_X 120
@@ -416,6 +422,7 @@ _HASP_ATTRIBUTE(SCALE_END_LINE_WIDTH, scale_end_line_width, lv_style_int_t)
 #define ATTR_COLOR 58979
 #define ATTR_TXT 9328
 #define ATTR_TEXT 53869
+#define ATTR_TEMPLATE 43290
 #define ATTR_SRC 4964
 #define ATTR_ID 6715
 #define ATTR_EXT_CLICK_H 46643
@@ -426,6 +433,7 @@ _HASP_ATTRIBUTE(SCALE_END_LINE_WIDTH, scale_end_line_width, lv_style_int_t)
 #define ATTR_COMMENT 62559
 #define ATTR_TAG 7866
 #define ATTR_JSONL 61604
+#define ATTR_MODE_FIXED 35736
 
 // methods
 #define ATTR_DELETE 50027
@@ -480,8 +488,8 @@ _HASP_ATTRIBUTE(SCALE_END_LINE_WIDTH, scale_end_line_width, lv_style_int_t)
 // Spinner
 #define ATTR_SPEED 14375
 #define ATTR_THICKNESS 24180
-//#define ATTR_ARC_LENGTH 755 - use ATTR_ANGLE
-// #define ATTR_DIRECTION 32415 - see Dropdown
+// #define ATTR_ARC_LENGTH 755 - use ATTR_ANGLE
+//  #define ATTR_DIRECTION 32415 - see Dropdown
 
 // Line
 #define ATTR_POINTS 8643

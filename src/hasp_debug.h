@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #ifndef HASP_DEBUG_H
@@ -17,7 +17,7 @@
 
 #include "lang/lang.h"
 
-#if(!defined(WINDOWS)) && (!defined(POSIX))
+#if HASP_TARGET_ARDUINO
 /* ===== Default Event Processors ===== */
 void debugSetup(JsonObject settings);
 
@@ -140,7 +140,7 @@ void debugLvglLogEvent(lv_log_level_t level, const char* file, uint32_t line, co
 IRAM_ATTR void debugLoop(void);
 void debugEverySecond(void);
 void debugStart(void);
-void debugStartSerial(void);
+bool debugStartSerial(void);
 void debugStop(void);
 void debugPrintHaspHeader(Print* output);
 void debugPrintTag(uint8_t tag, Print* _logOutput);
@@ -180,6 +180,7 @@ enum {
 
     TAG_EPRM = 30,
     TAG_FILE = 31,
+    TAG_NVS  = 32,
     TAG_GPIO = 40,
 
     TAG_ETH      = 60,
@@ -192,6 +193,8 @@ enum {
     TAG_MQTT_RCV = 67,
     TAG_FTP      = 68,
     TAG_TIME     = 69,
+    TAG_NETW     = 70,
+    TAG_WG       = 71,
 
     TAG_LVGL = 90,
     TAG_LVFS = 91,
@@ -199,6 +202,8 @@ enum {
 
     TAG_CUSTOM = 99
 };
+
+#define HASP_SERIAL Serial
 
 //#define TERM_COLOR_Black "\u001b[30m"
 #define TERM_COLOR_GRAY "\e[37m"

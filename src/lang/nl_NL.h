@@ -1,3 +1,6 @@
+// This translation file is maintained on https://crowdin.com/project/openhasp/
+// Do not edit directly!
+
 #ifndef HASP_LANG_NL_NL_H
 #define HASP_LANG_NL_NL_H
 
@@ -30,10 +33,6 @@
 #define D_FILE_SIZE_DIVIDER 1024 //  kibi or kilo bytes
 #define D_DECIMAL_POINT ","      //  decimal comma or point
 
-#define D_SETTING_ENABLED "Ingeschakeld"
-#define D_SETTING_DISABLED "Uitgeschakeld"
-#define D_SETTING_DEFAULT "Standaard"
-
 #define D_SERVICE_STARTING "Starten..."
 #define D_SERVICE_STARTED "Gestart"
 #define D_SERVICE_START_FAILED "Starten mislukt"
@@ -41,6 +40,10 @@
 #define D_SERVICE_DISABLED "Uitgeschakeld"
 #define D_SERVICE_CONNECTED "Verbonden"
 #define D_SERVICE_DISCONNECTED "Verbroken"
+
+#define D_SETTING_ENABLED "Ingeschakeld"
+#define D_SETTING_DISABLED "Uitgeschakeld"
+#define D_SETTING_DEFAULT "Standaard"
 
 #define D_NETWORK_IP_ADDRESS_RECEIVED "IP adres %s ontvangen"
 #define D_NETWORK_ONLINE "online"
@@ -122,7 +125,9 @@
 #define D_HTTP_HASP_DESIGN "HASP Ontwerp"
 #define D_HTTP_INFORMATION "Informatie"
 #define D_HTTP_HTTP_SETTINGS "HTTP Instellingen"
+#define D_HTTP_FTP_SETTINGS "FTP Instellingen"
 #define D_HTTP_WIFI_SETTINGS "Wifi Instellingen"
+#define D_HTTP_WIREGUARD_SETTINGS "WireGuard Settings"
 #define D_HTTP_MQTT_SETTINGS "MQTT Instellingen"
 #define D_HTTP_GPIO_SETTINGS "GPIO Instellingen"
 #define D_HTTP_MDNS_SETTINGS "mDNS Instellingen"
@@ -180,21 +185,25 @@
 #define D_INFO_SERVER "Server"
 #define D_INFO_USERNAME "Gerbuiker"
 #define D_INFO_CLIENTID "Client ID"
-#define D_INFO_CONNECTED "Verbonden"
-#define D_INFO_DISCONNECTED "Verbroken"
+// #define D_INFO_CONNECTED "Verbonden"
+// #define D_INFO_DISCONNECTED "Verbroken"
 #define D_INFO_RECEIVED "Ontvangen"
 #define D_INFO_PUBLISHED "Gepubliceerd"
 #define D_INFO_FAILED "Mislukt"
 #define D_INFO_ETHERNET "Ethernet"
 #define D_INFO_WIFI "Wifi"
+#define D_INFO_WIREGUARD "WireGuard"
 #define D_INFO_LINK_SPEED "Snelheid"
 #define D_INFO_FULL_DUPLEX "Full Duplex"
+#define D_INFO_BSSID "BSSID"
 #define D_INFO_SSID "SSID"
 #define D_INFO_RSSI "Signaalsterkte"
 #define D_INFO_IP_ADDRESS "IP Adres"
 #define D_INFO_MAC_ADDRESS "Fysiek adres (MAC)"
 #define D_INFO_GATEWAY "Gateway"
 #define D_INFO_DNS_SERVER "DNS Server"
+#define D_INFO_ENDPOINT_IP "Endpoint IP"
+#define D_INFO_ENDPOINT_PORT "Endpoint Port"
 
 #define D_OOBE_MSG "Raak het scherm aan om WiFi in te stellen of meld je aan op AP:"
 #define D_OOBE_SCAN_TO_CONNECT "Scan code"
@@ -206,6 +215,9 @@
 #define D_WIFI_RSSI_FAIR "Redelijk"
 #define D_WIFI_RSSI_WEAK "Zwak"
 #define D_WIFI_RSSI_BAD "Zeer Slecht"
+
+#define D_WG_INITIALIZED "Initialized"
+#define D_WG_BAD_CONFIG "Missing or bad configuration"
 
 #define D_GPIO_SWITCH "Schakelaar"
 #define D_GPIO_BUTTON "Drukknop"

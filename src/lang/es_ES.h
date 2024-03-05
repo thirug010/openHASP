@@ -1,3 +1,6 @@
+// This translation file is maintained on https://crowdin.com/project/openhasp/
+// Do not edit directly!
+
 #ifndef HASP_LANG_ES_ES_H
 #define HASP_LANG_ES_ES_H
 
@@ -10,7 +13,7 @@
 #define D_NO "No"  // New
 
 #define D_ERROR_OUT_OF_MEMORY "Memory llena"
-#define D_ERROR_UNKNOWN "Error desconocido"
+#define D_ERROR_UNKNOWN "Unknown error"
 
 #define D_CONFIG_NOT_CHANGED "No hay cambios en la configuración"
 #define D_CONFIG_CHANGED "Configuración cambiada"
@@ -67,11 +70,11 @@
 #define D_TELNET_CLOSING_CONNECTION "Cerrando sesión de %s"
 #define D_TELNET_CLIENT_LOGIN_FROM "Se ha firmado el cliente %s"
 #define D_TELNET_CLIENT_CONNECT_FROM "Se ha conectado el cliente %s"
+#define D_TELNET_CLIENT_NOT_CONNECTED "Cliente NO conectado"
 #define D_TELNET_INCORRECT_LOGIN_ATTEMPT "Intento de conexión incorrecta desde %s"
 #define D_TELNET_STARTED "Console Telnet arrancada"
 #define D_TELNET_FAILED "Falló el arranque de la consola Telnet"
 #define D_TELNET_CLIENT_CONNECTED "Cliente conectado"
-#define D_TELNET_CLIENT_NOT_CONNECTED "Cliente NO conectado"
 #define D_TELNET_CLIENT_REJECTED "Cliente rechazado"
 
 #define D_HASP_INVALID_PAGE "Página inválida %u"
@@ -122,7 +125,9 @@
 #define D_HTTP_HASP_DESIGN "Diseño de HASP"
 #define D_HTTP_INFORMATION "Información"
 #define D_HTTP_HTTP_SETTINGS "Ajustes HTTP"
+#define D_HTTP_HTTP_SETTINGS "Ajustes FTP"
 #define D_HTTP_WIFI_SETTINGS "Ajustes Wifi"
+#define D_HTTP_WIREGUARD_SETTINGS "WireGuard Settings"
 #define D_HTTP_MQTT_SETTINGS "Ajustes MQTT"
 #define D_HTTP_GPIO_SETTINGS "Ajustes GPIO"
 #define D_HTTP_MDNS_SETTINGS "Ajustes mDNS"
@@ -149,7 +154,6 @@
 #define D_HTTP_CONFIGURATION "Configuración"
 #define D_HTTP_CONFIG_CHANGED                                                                                          \
     "La configuración ha cambiado, haga clic en <a href='/reboot'>Reiniciar</a> para guardar los cambios en la "      \
-    "memoria flash."
 #define D_HTTP_SENDING_PAGE "Se envió pagina %S a %s"
 #define D_HTTP_FOOTER "por Francis Van Roie"
 
@@ -181,21 +185,25 @@
 #define D_INFO_SERVER "Servidor"
 #define D_INFO_USERNAME "Nombre de usuario"
 #define D_INFO_CLIENTID "ID de Cliente"
-#define D_INFO_CONNECTED "Connectado"
-#define D_INFO_DISCONNECTED "Desconectado"
+// #define D_INFO_CONNECTED "Connectado"
+// #define D_INFO_DISCONNECTED "Desconectado"
 #define D_INFO_RECEIVED "Recivido"
 #define D_INFO_PUBLISHED "Publicado"
 #define D_INFO_FAILED "Fallado"
 #define D_INFO_ETHERNET "Ethernet"
 #define D_INFO_WIFI "Wifi"
+#define D_INFO_WIREGUARD "WireGuard"
 #define D_INFO_LINK_SPEED "Velocidad de enlace"
 #define D_INFO_FULL_DUPLEX "Full Duplex"
+#define D_INFO_BSSID "BSSID"
 #define D_INFO_SSID "SSID"
 #define D_INFO_RSSI "Potencia de señal"
 #define D_INFO_IP_ADDRESS "Dirección IP"
 #define D_INFO_MAC_ADDRESS "Dirección MAC"
 #define D_INFO_GATEWAY "Gateway"
 #define D_INFO_DNS_SERVER "Servidor DNS"
+#define D_INFO_ENDPOINT_IP "Endpoint IP"
+#define D_INFO_ENDPOINT_PORT "Endpoint Port"
 
 #define D_OOBE_MSG "Toque la pantalla para ajustar WiFi o conectarse a un punto de acceso"
 #define D_OOBE_SCAN_TO_CONNECT "Scanee para conectar"
@@ -208,7 +216,9 @@
 #define D_WIFI_RSSI_WEAK "Débil"
 #define D_WIFI_RSSI_BAD "Muy baka"
 
-// new
+#define D_WG_INITIALIZED "Initialized"
+#define D_WG_BAD_CONFIG "Missing or bad configuration"
+
 #define D_GPIO_SWITCH "Switch"
 #define D_GPIO_BUTTON "Botón"
 #define D_GPIO_TOUCH "Capacitive Touch" // new

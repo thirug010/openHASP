@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #include "hasplib.h"
@@ -8,12 +8,12 @@
 #include "hasp_debug.h"
 #include "hasp_macro.h"
 
-#if(!defined(WINDOWS)) && (!defined(POSIX))
+#if HASP_TARGET_ARDUINO
 
 #define debug_print(io, ...) io->printf(__VA_ARGS__)
 #define debug_newline(io) io->println()
 
-#else
+#elif HASP_TARGET_PC
 #include <stdio.h>
 #include <stdlib.h>
 #include <iostream>
@@ -21,9 +21,21 @@
 #define debug_print(io, ...) fprintf(stdout, __VA_ARGS__)
 #define debug_newline(io) fprintf(stdout, "\n")
 
+#if defined(WINDOWS)
+#include <windows.h>
+#include <direct.h>
+#define cwd _getcwd
 #endif
 
-bool debugAnsiCodes = true;
+#if defined(POSIX)
+#include <unistd.h>
+#include <limits.h>
+#define cwd getcwd
+#endif
+
+#endif
+
+bool debugAnsiCodes = false;
 
 inline void debugSendAnsiCode(const __FlashStringHelper* code, Print* _logOutput)
 {
@@ -33,6 +45,15 @@ inline void debugSendAnsiCode(const __FlashStringHelper* code, Print* _logOutput
     if(debugAnsiCodes) debug_print(_logOutput, code);
 #endif
 }
+
+// inline void debugSendAnsiCode(const char* code, Print* _logOutput)
+// {
+// #ifdef ARDUINO
+//     if(debugAnsiCodes) _logOutput->print(code);
+// #else
+//     if(debugAnsiCodes) debug_print(_logOutput, code);
+// #endif
+// }
 
 /*
 void debug_timestamp()
@@ -87,10 +108,10 @@ static void debugPrintTimestamp(int level, Print* _logOutput)
 static inline void debug_flush()
 {
 #if defined(ARDUINO)
-    Serial.flush();
+    HASP_SERIAL.flush();
 #endif
 
-#if defined(WINDOWS) || defined(POSIX)
+#if HASP_TARGET_PC
     fflush(stdout);
 #endif
 }
@@ -107,21 +128,21 @@ void debugEverySecond()
 void debugStart(void)
 {
 
-#if defined(WINDOWS) || defined(POSIX)
+#if HASP_TARGET_PC
     debug_newline();
     debugPrintHaspHeader(NULL);
     debug_newline();
 
+    char curdir[PATH_MAX];
+    LOG_INFO(TAG_DEBG, F("Configuration directory: %s"), cwd(curdir, sizeof(curdir)));
     LOG_INFO(TAG_DEBG, F("Environment: " PIOENV));
     LOG_INFO(TAG_DEBG, F("Console started"));
 
     debug_flush();
-#else
+#endif
 
 #if HASP_USE_CONSOLE > 0
     consoleSetup();
-#endif
-
 #endif
 }
 
@@ -312,6 +333,10 @@ void debug_get_tag(uint8_t tag, char* buffer)
             memcpy_P(buffer, PSTR("CUST"), 5);
             break;
 
+        case TAG_WG:
+            memcpy_P(buffer, PSTR("WG  "), 5);
+            break;
+
         default:
             memcpy_P(buffer, PSTR("----"), 5);
             break;
@@ -364,6 +389,13 @@ static void debugPrintLvglMemory(int level, Print* _logOutput)
 #endif // LV_MEM_CUSTOM
 }
 
+#if defined(ESP32) && defined(HASP_LOG_TASKS)
+static void debugPrintTaskName(int level, Print* _logOutput)
+{
+    debug_print(_logOutput, "[%s%6u]", pcTaskGetTaskName(NULL), uxTaskGetStackHighWaterMark(NULL));
+}
+#endif
+
 static void debugPrintPriority(int level, Print* _logOutput)
 {
     switch(level) {
@@ -408,6 +440,9 @@ void debugPrintPrefix(uint8_t tag, int level, Print* _logOutput)
     debugPrintTimestamp(level, _logOutput);
     debugPrintHaspMemory(level, _logOutput);
     debugPrintLvglMemory(level, _logOutput);
+#if defined(ESP32) && defined(HASP_LOG_TASKS)
+    debugPrintTaskName(level, _logOutput);
+#endif
 
     if(tag == TAG_MQTT_PUB && level == LOG_LEVEL_NOTICE) {
         debugSendAnsiCode(F(TERM_COLOR_GREEN), _logOutput);

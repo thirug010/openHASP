@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #ifndef HASP_BASE_TOUCH_DRIVER_H
@@ -32,6 +32,8 @@ class BaseTouch {
     }
     void calibrate(uint16_t* calData)
     {}
+    void set_calibration(uint16_t* calData)
+    {}
     bool is_driver_pin(uint8_t)
     {
         return false;
@@ -49,9 +51,21 @@ class BaseTouch {
 #endif
 
 #if TOUCH_DRIVER == 0x2046 && defined(USER_SETUP_LOADED)
-#warning Building for XPT2046
+#warning Building for TFT_eSPI XPT2046
 //#include "touch_driver_xpt2046.h"
 #include "touch_driver_tftespi.h"
+#elif TOUCH_DRIVER == 0x2046 && defined(LGFX_USE_V1) && defined(HASP_USE_LGFX_TOUCH)
+#warning Building for LovyanGFX XPT2046
+#include "touch_driver_lovyangfx.h"
+#elif TOUCH_DRIVER == 0x0911 && defined(LGFX_USE_V1) && defined(HASP_USE_LGFX_TOUCH)
+#warning Building for LovyanGFX GT911
+#include "touch_driver_lovyangfx.h"
+#elif TOUCH_DRIVER == 0x6336 && defined(LGFX_USE_V1) && defined(HASP_USE_LGFX_TOUCH)
+#warning Building for LovyanGFX FT6336
+#include "touch_driver_lovyangfx.h"
+#elif defined(LGFX_USE_V1) && defined(HASP_USE_LGFX_TOUCH)
+#warning Building for LovyanGFX
+#include "touch_driver_lovyangfx.h"
 #elif TOUCH_DRIVER == 0x5206
 #warning Building for FT5206
 #include "touch_driver_ft5206.h"
@@ -73,6 +87,9 @@ class BaseTouch {
 #elif TOUCH_DRIVER == 0x1680
 #warning Building for GSL1680
 #include "touch_driver_gslx680.h"
+#elif TOUCH_DRIVER == 0x2007
+#warning Building for TSC2007
+#include "touch_driver_tsc2007.h"
 #elif defined(LGFX_USE_V1)
 #warning Building for LovyanGfx Touch
 #include "touch_driver_lovyangfx.h"

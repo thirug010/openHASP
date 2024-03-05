@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #ifndef HASP_H
@@ -9,6 +9,18 @@
 #endif
 
 #include "hasplib.h"
+
+#ifndef HASP_START_DIM
+#define HASP_START_DIM 255
+#endif
+
+#ifndef HASP_START_PAGE
+#define HASP_START_PAGE 1
+#endif
+
+#ifndef HASP_THEME_ID
+#define HASP_THEME_ID 2
+#endif
 
 #if HASP_USE_DEBUG > 0
 #include "../hasp_debug.h"

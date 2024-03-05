@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #include <Arduino.h>
@@ -23,6 +23,7 @@
 #endif
 
 #include <WiFi.h>
+#include "Preferences.h"
 #elif defined(ARDUINO_ARCH_ESP8266)
 #include <ESP8266WiFi.h>
 #include "user_interface.h" // Wifi Reasons
@@ -36,34 +37,18 @@ static WiFiEventHandler gotIpEventHandler, disconnectedEventHandler;
 SPIClass espSPI(ESPSPI_MOSI, ESPSPI_MISO, ESPSPI_SCLK); // SPI port where esp is connected
 
 #endif
-//#include "DNSserver.h"
+// #include "DNSserver.h"
 
-char wifiSsid[MAX_USERNAME_LENGTH]     = WIFI_SSID;
-char wifiPassword[MAX_PASSWORD_LENGTH] = WIFI_PASSWORD;
-char wifiIpAddress[16]                 = "";
-uint16_t wifiReconnectCounter          = 0;
-bool wifiOnline                        = false;
-bool haspOnline                        = false;
-bool wifiEnabled                       = true;
+char wifiSsid[MAX_SSID_LEN]           = WIFI_SSID;
+char wifiPassword[MAX_PASSPHRASE_LEN] = WIFI_PASSWORD;
+char wifiIpAddress[16]                = "";
+bool wifiEnabled                      = true;
+extern uint16_t network_reconnect_counter;
 
 // const byte DNS_PORT = 53;
 // DNSServer dnsServer;
 
 /* ============ Connection Event Handlers =============================================================== */
-
-void wifi_run_scripts()
-{
-    if(wifiOnline != haspOnline) {
-        if(wifiOnline) {
-            dispatch_exec(NULL, "L:/online.cmd", TAG_WIFI);
-            networkStart();
-        } else {
-            dispatch_exec(NULL, "L:/offline.cmd", TAG_WIFI);
-            networkStop();
-        }
-        haspOnline = wifiOnline;
-    }
-}
 
 static void wifiConnected(IPAddress ipaddress)
 {
@@ -77,18 +62,13 @@ static void wifiConnected(IPAddress ipaddress)
 
     if((uint32_t)ipaddress == 0) {
         LOG_ERROR(TAG_WIFI, F(D_NETWORK_IP_ADDRESS_RECEIVED), wifiIpAddress);
-        wifiOnline = false;
+        network_disconnected();
         return;
     } else {
         LOG_TRACE(TAG_WIFI, F(D_NETWORK_IP_ADDRESS_RECEIVED), wifiIpAddress);
     }
 
-    if(wifiOnline) return; // already connected
-
-    wifiOnline           = true; // now we are connected
-    wifiReconnectCounter = 0;
-    LOG_VERBOSE(TAG_WIFI, F("Connected = %s"),
-                WiFi.status() == WL_CONNECTED ? PSTR(D_NETWORK_ONLINE) : PSTR(D_NETWORK_OFFLINE));
+    network_connected();
 }
 
 static void wifiDisconnected(const char* ssid, uint8_t reason)
@@ -218,6 +198,9 @@ static void wifiDisconnected(const char* ssid, uint8_t reason)
         case WIFI_REASON_DISASSOC_SUPCHAN_BAD:
             snprintf_P(buffer, sizeof(buffer), PSTR("bad supchan"));
             break;
+        case WIFI_REASON_BSS_TRANSITION_DISASSOC:
+            snprintf_P(buffer, sizeof(buffer), PSTR("bss transition disassoc"));
+            break;
         case WIFI_REASON_IE_INVALID:
             snprintf_P(buffer, sizeof(buffer), PSTR("ie invalid"));
             break;
@@ -255,6 +238,10 @@ static void wifiDisconnected(const char* ssid, uint8_t reason)
             snprintf_P(buffer, sizeof(buffer), PSTR("cipher suite rejected"));
             break;
 
+        case WIFI_REASON_INVALID_PMKID:
+            snprintf_P(buffer, sizeof(buffer), PSTR("invalid pmkid"));
+            break;
+
         case WIFI_REASON_BEACON_TIMEOUT:
             snprintf_P(buffer, sizeof(buffer), PSTR("beacon timeout"));
             break;
@@ -273,20 +260,16 @@ static void wifiDisconnected(const char* ssid, uint8_t reason)
         case WIFI_REASON_CONNECTION_FAIL:
             snprintf_P(buffer, sizeof(buffer), PSTR(D_NETWORK_CONNECTION_FAILED));
             break;
+        case WIFI_REASON_AP_TSF_RESET:
+        case WIFI_REASON_ROAMING:
 #endif
 
         default:
-            snprintf_P(buffer, sizeof(buffer), PSTR(D_ERROR_UNKNOWN));
+            snprintf_P(buffer, sizeof(buffer), PSTR(D_ERROR_UNKNOWN " (%d)"), reason);
     }
 
-    if(wifiReconnectCounter++ % 5 == 0)
-        LOG_WARNING(TAG_WIFI, F("Disconnected from %s (Reason: %s [%d])"), ssid, buffer, reason);
-
-    if(!wifiOnline) return; // we were not connected
-
-    wifiOnline = false; // now we are disconnected
-    LOG_VERBOSE(TAG_WIFI, F("Connected = %s"),
-                WiFi.status() == WL_CONNECTED ? PSTR(D_NETWORK_ONLINE) : PSTR(D_NETWORK_OFFLINE));
+    LOG_WARNING(TAG_WIFI, buffer);
+    network_disconnected();
 }
 
 static void wifiSsidConnected(const char* ssid)
@@ -298,18 +281,19 @@ static void wifiSsidConnected(const char* ssid)
 static void wifi_callback(WiFiEvent_t event, WiFiEventInfo_t info)
 {
     switch(event) {
-        case SYSTEM_EVENT_WIFI_READY:             /*!< ESP32 WiFi ready */
-        case SYSTEM_EVENT_STA_START:              /*!< ESP32 station start */
-        case SYSTEM_EVENT_STA_STOP:               /*!< ESP32 station stop */
+        case SYSTEM_EVENT_WIFI_READY: /*!< ESP32 WiFi ready */
+            LOG_VERBOSE(TAG_WIFI, F("ready"));
+            break;
+        case SYSTEM_EVENT_STA_START: /*!< ESP32 station start */
+            LOG_VERBOSE(TAG_WIFI, F("station start"));
+            break;
         case SYSTEM_EVENT_STA_AUTHMODE_CHANGE:    /*!< the auth mode of AP connected by ESP32 station changed */
-        case SYSTEM_EVENT_STA_BSS_RSSI_LOW:       /*!< ESP32 station connected BSS rssi goes below threshold */
         case SYSTEM_EVENT_STA_WPS_ER_SUCCESS:     /*!< ESP32 station wps succeeds in enrollee mode */
         case SYSTEM_EVENT_STA_WPS_ER_FAILED:      /*!< ESP32 station wps fails in enrollee mode */
         case SYSTEM_EVENT_STA_WPS_ER_TIMEOUT:     /*!< ESP32 station wps timeout in enrollee mode */
         case SYSTEM_EVENT_STA_WPS_ER_PIN:         /*!< ESP32 station wps pin code in enrollee mode */
         case SYSTEM_EVENT_STA_WPS_ER_PBC_OVERLAP: /*!< ESP32 station wps overlap in enrollee mode */
         case SYSTEM_EVENT_AP_START:               /*!< ESP32 soft-AP start */
-        case SYSTEM_EVENT_AP_STOP:                /*!< ESP32 soft-AP stop */
         case SYSTEM_EVENT_AP_STACONNECTED:        /*!< a station connected to ESP32 soft-AP */
         case SYSTEM_EVENT_AP_STADISCONNECTED:     /*!< a station disconnected from ESP32 soft-AP */
         case SYSTEM_EVENT_AP_STAIPASSIGNED:       /*!< ESP32 soft-AP assign an IP to a connected station */
@@ -337,6 +321,14 @@ static void wifi_callback(WiFiEvent_t event, WiFiEventInfo_t info)
 #endif
             break;
 
+        case SYSTEM_EVENT_STA_BSS_RSSI_LOW:
+            LOG_WARNING(TAG_WIFI, F("BSS rssi goes below threshold"));
+            break;
+
+        case SYSTEM_EVENT_AP_STOP:          /*!< ESP32 soft-AP stop */
+        case SYSTEM_EVENT_STA_STOP:         /*!< ESP32 station stop */
+                                            // wifiSetup();
+                                            // break;
         case SYSTEM_EVENT_STA_LOST_IP:      /*!< ESP32 station lost IP and the IP is reset to 0 */
         case SYSTEM_EVENT_STA_DISCONNECTED: /*!< ESP32 station disconnected from AP */
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(2, 0, 0)
@@ -395,10 +387,7 @@ static void wifiSTADisconnected(WiFiEventStationModeDisconnected info)
 
 bool wifiShowAP()
 {
-    if(wifiEnabled && strlen(wifiSsid) != 0)
-        return false;
-    else
-        return true;
+    return wifiEnabled && strlen(wifiSsid) == 0;
 }
 
 bool wifiShowAP(char* ssid, char* pass)
@@ -442,19 +431,20 @@ static void wifiReconnect(void)
     WiFi.setHostname(haspDevice.get_hostname());
     WiFi.setSleep(false);
 
-    IPAddress ip((uint32_t)0);
-    IPAddress net((uint32_t)0);
+    IPAddress ip(INADDR_NONE);
     // IPAddress ip(192, 168, 0, 60);
+    IPAddress net(INADDR_NONE);
     // IPAddress net(255, 255, 255, 0);
-    IPAddress gw((uint32_t)0);
-    IPAddress dns1((uint32_t)0);
-    IPAddress dns2((uint32_t)0);
+    IPAddress gw(INADDR_NONE);
+    IPAddress dns1(INADDR_NONE);
+    IPAddress dns2(INADDR_NONE);
 
     if(ip && net)
         WiFi.config(ip, gw, net, dns1, dns2);
     else
-        WiFi.mode(WIFI_STA);
+        WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
 
+    WiFi.mode(WIFI_STA);
     WiFi.begin(wifiSsid, wifiPassword);
 #endif
 }
@@ -507,6 +497,14 @@ void wifiSetup()
         disconnectedEventHandler = WiFi.onStationModeDisconnected(wifiSTADisconnected);
 #elif defined(ARDUINO_ARCH_ESP32)
         WiFi.onEvent(wifi_callback);
+
+        Preferences preferences;
+        nvs_user_begin(preferences, "wifi", true);
+        String password = preferences.getString(FP_CONFIG_PASS, WIFI_PASSWORD);
+        strncpy(wifiPassword, password.c_str(), sizeof(wifiPassword));
+        LOG_DEBUG(TAG_WIFI, F(D_BULLET "Read %s => %s (%d bytes)"), FP_CONFIG_PASS, password.c_str(),
+                  password.length());
+        preferences.end();
 #endif
 
         wifiReconnect();
@@ -523,19 +521,18 @@ bool wifiEvery5Seconds()
         return false;
     }
 #else
-    if(WiFi.getMode() != WIFI_STA) {
+    if(WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) {
+        LOG_DEBUG(TAG_WIFI, F("5sec mode AP %d"), WiFi.getMode());
         return false;
     }
 #endif
 
-    if(wifiOnline != haspOnline) wifi_run_scripts();
-
-    if(WiFi.status() == WL_CONNECTED) {
+    if(WiFi.status() == WL_CONNECTED && WiFi.localIP() > 0) {
         return true;
     }
 
     if(wifiEnabled) {
-        LOG_WARNING(TAG_WIFI, F("No Connection... retry %d"), wifiReconnectCounter);
+        LOG_WARNING(TAG_WIFI, F("No Connection... retry %d"), network_reconnect_counter);
         wifiReconnect();
     }
 
@@ -581,7 +578,6 @@ bool wifiValidateSsid(const char* ssid, const char* pass)
 
 void wifiStop()
 {
-    wifiReconnectCounter = 0; // Prevent endless loop in wifiDisconnected
     WiFi.disconnect(true);
 #if !defined(STM32F4xx)
     WiFi.mode(WIFI_OFF);
@@ -620,7 +616,8 @@ void wifi_get_info(JsonDocument& doc)
     String buffer((char*)0);
     buffer.reserve(64);
 
-    JsonObject info = doc.createNestedObject(F(D_INFO_WIFI));
+    JsonObject info       = doc.createNestedObject(F(D_INFO_WIFI));
+    info[F(D_INFO_BSSID)] = WiFi.BSSIDstr();
 
     int8_t rssi = WiFi.RSSI();
     buffer += String(rssi);
@@ -666,8 +663,10 @@ bool wifiGetConfig(const JsonObject& settings)
     if(strcmp(wifiSsid, settings[FPSTR(FP_CONFIG_SSID)].as<String>().c_str()) != 0) changed = true;
     settings[FPSTR(FP_CONFIG_SSID)] = wifiSsid;
 
-    if(strcmp(wifiPassword, settings[FPSTR(FP_CONFIG_PASS)].as<String>().c_str()) != 0) changed = true;
-    settings[FPSTR(FP_CONFIG_PASS)] = wifiPassword;
+    // if(strcmp(wifiPassword, settings[FPSTR(FP_CONFIG_PASS)].as<String>().c_str()) != 0) changed = true;
+    // settings[FPSTR(FP_CONFIG_PASS)] = wifiPassword;
+    if(strcmp(D_PASSWORD_MASK, settings[FPSTR(FP_CONFIG_PASS)].as<String>().c_str()) != 0) changed = true;
+    settings[FPSTR(FP_CONFIG_PASS)] = D_PASSWORD_MASK;
 
     if(changed) configOutput(settings, TAG_WIFI);
     return changed;
@@ -677,12 +676,15 @@ bool wifiGetConfig(const JsonObject& settings)
  *
  * Read the settings from json and sets the application variables.
  *
- * @note: data pixel should be formated to uint32_t RGBA. Imagemagick requirements.
+ * @note: data pixel should be formatted to uint32_t RGBA. Imagemagick requirements.
  *
  * @param[in] settings    JsonObject with the config settings.
  **/
 bool wifiSetConfig(const JsonObject& settings)
 {
+    Preferences preferences;
+    nvs_user_begin(preferences, "wifi", false);
+
     configOutput(settings, TAG_WIFI);
     bool changed = false;
 
@@ -695,6 +697,7 @@ bool wifiSetConfig(const JsonObject& settings)
        settings[FPSTR(FP_CONFIG_PASS)].as<String>() != String(FPSTR(D_PASSWORD_MASK))) {
         changed |= strcmp(wifiPassword, settings[FPSTR(FP_CONFIG_PASS)]) != 0;
         strncpy(wifiPassword, settings[FPSTR(FP_CONFIG_PASS)], sizeof(wifiPassword));
+        nvsUpdateString(preferences, FP_CONFIG_PASS, settings[FPSTR(FP_CONFIG_PASS)]);
     }
 
     return changed;

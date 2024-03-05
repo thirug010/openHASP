@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #if HASP_USE_CONFIG > 0
@@ -6,7 +6,6 @@
 #include "hasplib.h"
 
 #include "hasp_gui.h"
-#include "hasp_config.h"
 
 #include "sys/net/hasp_wifi.h"
 #include "hasp/hasp_dispatch.h"
@@ -52,8 +51,8 @@ static void kb_event_cb(lv_obj_t* event_kb, lv_event_t event)
 {
     if(event == LV_EVENT_APPLY) {
         StaticJsonDocument<256> settings;
-        char ssid[64] = "";
-        char pass[64] = "";
+        char ssid[MAX_SSID_LEN]       = "";
+        char pass[MAX_PASSPHRASE_LEN] = "";
         lv_obj_t* obj;
 
         obj = hasp_find_obj_from_parent_id(oobepage[1], (uint8_t)10);
@@ -114,8 +113,10 @@ static void ta_event_cb(lv_obj_t* ta, lv_event_t event)
 
 static void oobeSetupQR(const char* ssid, const char* pass)
 {
-    lv_disp_t* disp = lv_disp_get_default();
-    oobepage[0]     = lv_obj_create(NULL, NULL);
+    lv_disp_t* disp    = lv_disp_get_default();
+    lv_coord_t hor_res = lv_disp_get_hor_res(disp);
+    lv_coord_t ver_res = lv_disp_get_ver_res(disp);
+    oobepage[0]        = lv_obj_create(NULL, NULL);
     char buffer[128];
     lv_obj_t* container = lv_cont_create(oobepage[0], NULL);
     lv_obj_set_pos(container, 5, 5);
@@ -132,14 +133,16 @@ static void oobeSetupQR(const char* ssid, const char* pass)
     snprintf_P(buffer, sizeof(buffer), PSTR(D_OOBE_SCAN_TO_CONNECT));
     lv_label_set_text(qrlabel, buffer);
 
-    if(disp->driver.hor_res <= disp->driver.ver_res) {
+    if(hor_res <= ver_res) {
         lv_obj_align(qr, NULL, LV_ALIGN_IN_BOTTOM_MID, 0, -5);
-        lv_obj_set_size(container, disp->driver.hor_res - 10, disp->driver.ver_res - 10 - 125);
+        lv_obj_set_size(container, hor_res - 10, ver_res - 10 - 125);
         lv_obj_align(qrlabel, container, LV_ALIGN_IN_BOTTOM_MID, 0, 0);
+        LOG_INFO(TAG_OOBE, "h: %d - v: %d", hor_res, ver_res);
     } else {
-        lv_obj_align(qr, NULL, LV_ALIGN_IN_RIGHT_MID, -5, 0);
-        lv_obj_set_size(container, disp->driver.hor_res - 10 - 125, disp->driver.ver_res - 10);
+        lv_obj_align(qr, NULL, LV_ALIGN_IN_RIGHT_MID, -5, -6);
+        lv_obj_set_size(container, hor_res - 10 - 125, ver_res - 10);
         lv_obj_align(qrlabel, qr, LV_ALIGN_OUT_BOTTOM_MID, 0, 5);
+        LOG_INFO(TAG_OOBE, "h: %d - v: %d", hor_res, ver_res);
     }
 
 #else
@@ -210,7 +213,7 @@ static void oobeSetupSsid(void)
     lv_obj_set_style_local_text_font(pwd_ta, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, defaultfont);
 
     lv_textarea_set_text(pwd_ta, "");
-    lv_textarea_set_max_length(pwd_ta, 32);
+    lv_textarea_set_max_length(pwd_ta, MAX_PASSWORD_LENGTH);
     lv_textarea_set_pwd_mode(pwd_ta, true);
     lv_textarea_set_one_line(pwd_ta, true);
     lv_textarea_set_cursor_hidden(pwd_ta, true);
@@ -303,9 +306,6 @@ void oobeSetAutoCalibrate(bool cal)
 
 bool oobeSetup()
 {
-#if HASP_USE_ETHERNET > 0
-    if(eth_connected) return false;
-#endif
 #if HASP_USE_WIFI > 0
     char ssid[32];
     char pass[32];

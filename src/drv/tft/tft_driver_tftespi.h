@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #ifndef HASP_TFTESPI_DRIVER_H
@@ -62,7 +62,7 @@ class TftEspi : BaseTft {
     {
         if(pin != -1) {
             char buffer[64];
-            snprintf_P(buffer, sizeof(buffer), PSTR("%-11s: %s (GPIO %02d)"), String(pinfunction).c_str(),
+            snprintf_P(buffer, sizeof(buffer), PSTR("%-12s: %s (GPIO %02d)"), String(pinfunction).c_str(),
                        haspDevice.gpio_name(pin).c_str(), pin);
             LOG_VERBOSE(TAG_TFT, buffer);
         }

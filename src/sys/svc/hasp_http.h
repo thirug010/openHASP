@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #ifndef HASP_HTTP_H
@@ -7,11 +7,11 @@
 #include "hasp_conf.h"
 
 #ifndef HTTP_USERNAME
-#define HTTP_USERNAME "";
+#define HTTP_USERNAME ""
 #endif
 
 #ifndef HTTP_PASSWORD
-#define HTTP_PASSWORD "";
+#define HTTP_PASSWORD ""
 #endif
 
 struct hasp_http_config_t
@@ -77,6 +77,16 @@ bool httpSetConfig(const JsonObject& settings);
 #ifndef D_HTTP_COLOR_FOOTER_TEXT
 #define D_HTTP_COLOR_FOOTER_TEXT        "#0083cc"    // Text color of the page footer
 #endif
+#ifndef D_HTTP_COLOR_TOOLBAR
+#define D_HTTP_COLOR_TOOLBAR            D_HTTP_COLOR_BUTTON
+#endif
+#ifndef D_HTTP_COLOR_TREE
+#define D_HTTP_COLOR_TREE               D_HTTP_COLOR_GROUP               
+#endif
+#ifndef D_HTTP_COLOR_PREVIEW
+#define D_HTTP_COLOR_PREVIEW            "#888"
+#endif
+
 /* clang-format on */
 
 #endif

@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #include "hasplib.h"
@@ -18,6 +18,9 @@
 LV_FONT_DECLARE(unscii_8_icon);
 extern const char** btnmatrix_default_map; // memory pointer to lvgl default btnmatrix map
 extern const char* msgbox_default_map[];   // memory pointer to lvgl default btnmatrix map
+
+extern const uint8_t rootca_crt_bundle_start[] asm("_binary_data_cert_x509_crt_bundle_bin_start");
+extern const uint8_t rootca_crt_bundle_end[] asm("_binary_data_cert_x509_crt_bundle_bin_end");
 
 void my_image_release_resources(lv_obj_t* obj)
 {
@@ -51,7 +54,7 @@ void my_btnmatrix_map_clear(lv_obj_t* obj)
     lv_btnmatrix_ext_t* ext = (lv_btnmatrix_ext_t*)lv_obj_get_ext_attr(obj);
     const char** map_p_tmp  = ext->map_p; // store current pointer
 
-    LOG_VERBOSE(TAG_ATTR, "%s %d %x   btn_cnt: %d", __FILE__, __LINE__, map_p_tmp, ext->btn_cnt);
+    LOG_DEBUG(TAG_ATTR, "%s %d %x   btn_cnt: %d", __FILE__, __LINE__, map_p_tmp, ext->btn_cnt);
 
     if(ext->map_p && (ext->btn_cnt > 0)) {
 
@@ -82,7 +85,7 @@ void my_msgbox_map_clear(lv_obj_t* obj)
     lv_btnmatrix_ext_t* ext_btnmatrix = (lv_btnmatrix_ext_t*)lv_obj_get_ext_attr(btnmatrix);
     if(!ext_btnmatrix) return;
 
-    if(ext_btnmatrix->map_p != msgbox_default_map) // Dont clear the default btnmap
+    if(ext_btnmatrix->map_p != msgbox_default_map) // Don't clear the default btnmap
         my_btnmatrix_map_clear(btnmatrix);         // Clear the custom button map if it exists
 }
 
@@ -90,6 +93,7 @@ void my_msgbox_map_clear(lv_obj_t* obj)
 const char** my_map_create(const char* payload)
 {
     // Reserve memory for JsonDocument
+    // StaticJsonDocument<1024> map_doc;
     size_t maxsize = (128u * ((strlen(payload) / 128) + 1)) + 256;
     DynamicJsonDocument map_doc(maxsize);
     DeserializationError jsonError = deserializeJson(map_doc, payload);
@@ -147,7 +151,7 @@ const char** my_map_create(const char* payload)
     }
     map_data_str[index] = buffer_addr + pos; // save pointer to the last \0 byte
 
-    LOG_VERBOSE(TAG_ATTR, F("%s %d"), __FILE__, __LINE__);
+    LOG_DEBUG(TAG_ATTR, F("%s %d"), __FILE__, __LINE__);
     return map_data_str;
 }
 
@@ -191,6 +195,7 @@ static bool my_line_set_points(lv_obj_t* obj, const char* payload)
 
     // Create new points
     // Reserve memory for JsonDocument
+    // StaticJsonDocument<1024> doc;
     size_t maxsize = (128u * ((strlen(payload) / 128) + 1)) + 256;
     DynamicJsonDocument doc(maxsize);
     DeserializationError jsonError = deserializeJson(doc, payload);
@@ -237,40 +242,33 @@ static lv_font_t* haspPayloadToFont(const char* payload)
         else if(var == 8)
             return &unscii_8_icon;
 
-#ifndef ARDUINO_ARCH_ESP8266
+#if !defined(ARDUINO_ARCH_ESP8266) // && (HASP_USE_FREETYPE == 0)
 
-#ifdef HASP_FONT_1
+#if defined(HASP_FONT_1) && defined(HASP_FONT_1)
         else if(var == HASP_FONT_SIZE_1)
             return &HASP_FONT_1;
 #endif
-
-#ifdef HASP_FONT_2
+#if defined(HASP_FONT_2) && defined(HASP_FONT_2)
         else if(var == HASP_FONT_SIZE_2)
             return &HASP_FONT_2;
 #endif
-
-#ifdef HASP_FONT_3
+#if defined(HASP_FONT_3) && defined(HASP_FONT_3)
         else if(var == HASP_FONT_SIZE_3)
             return &HASP_FONT_3;
 #endif
-
-#ifdef HASP_FONT_4
+#if defined(HASP_FONT_4) && defined(HASP_FONT_4)
         else if(var == HASP_FONT_SIZE_4)
             return &HASP_FONT_4;
 #endif
-
-#ifdef HASP_FONT_5
+#if defined(HASP_FONT_5) && defined(HASP_FONT_5)
         else if(var == HASP_FONT_SIZE_5)
             return &HASP_FONT_5;
 #endif
 
-#endif // ARDUINO_ARCH_ESP8266
-
-    } else {
-        return get_font(payload);
+#endif
     }
 
-    return nullptr;
+    return get_font(payload);
 }
 
 static hasp_attribute_type_t hasp_process_label_long_mode(lv_obj_t* obj, const char* payload, char** text, bool update)
@@ -288,6 +286,31 @@ static hasp_attribute_type_t hasp_process_label_long_mode(lv_obj_t* obj, const c
         }
     } else {
         i = lv_label_get_long_mode(obj);
+    }
+
+    if(i < count) {
+        strcpy_P(*text, arr[i]);
+        return HASP_ATTR_TYPE_STR;
+    }
+
+    return HASP_ATTR_TYPE_NOT_FOUND;
+}
+
+static hasp_attribute_type_t hasp_process_cpicker_mode(lv_obj_t* obj, const char* payload, char** text, bool update)
+{
+    const char* arr[] = {PSTR("hue"), PSTR("saturation"), PSTR("value")};
+    uint8_t count     = sizeof(arr) / sizeof(arr[0]);
+    uint8_t i         = 0;
+
+    if(update) {
+        for(i = 0; i < count; i++) {
+            if(!strcasecmp_P(payload, arr[i])) {
+                lv_cpicker_set_color_mode(obj, (lv_cpicker_color_mode_t)i);
+                break;
+            }
+        }
+    } else {
+        i = lv_cpicker_get_color_mode(obj);
     }
 
     if(i < count) {
@@ -327,7 +350,7 @@ static void hasp_attribute_get_part_state_new(lv_obj_t* obj, const char* attr_in
     uint8_t state_num = index % 10;
     uint8_t part_num  = index - state_num;
 
-    LOG_VERBOSE(TAG_ATTR, F("Parsed %s to %s with part %d and state %d"), attr_in, attr_out, part_num, state_num);
+    LOG_DEBUG(TAG_ATTR, F("Parsed %s to %s with part %d and state %d"), attr_in, attr_out, part_num, state_num);
 
 #if(LV_SLIDER_PART_INDIC != LV_SWITCH_PART_INDIC) || (LV_SLIDER_PART_KNOB != LV_SWITCH_PART_KNOB) ||                   \
     (LV_SLIDER_PART_BG != LV_SWITCH_PART_BG) || (LV_SLIDER_PART_INDIC != LV_ARC_PART_INDIC) ||                         \
@@ -978,7 +1001,7 @@ static hasp_attribute_type_t hasp_local_style_attr(lv_obj_t* obj, const char* at
             if(update) {
                 my_obj_set_value_str_text(obj, part, state, payload);
             } else {
-                attr_out_str(obj, attr, lv_obj_get_style_value_str(obj, part));
+                attr_out_str(obj, attr, my_obj_get_value_str_text(obj, part, state));
             }
             return HASP_ATTR_TYPE_METHOD_OK;
         }
@@ -1084,6 +1107,24 @@ static hasp_attribute_type_t hasp_process_spinner_attribute(lv_obj_t* obj, uint1
                 lv_spinner_set_type(obj, val % 3);
             else
                 val = lv_spinner_get_type(obj);
+            break;
+
+        default:
+            return HASP_ATTR_TYPE_NOT_FOUND;
+    }
+
+    return HASP_ATTR_TYPE_INT;
+}
+
+static hasp_attribute_type_t hasp_process_slider_attribute(lv_obj_t* obj, uint16_t attr_hash, int32_t& val, bool update)
+{
+    // We already know it's a slider object
+    switch(attr_hash) {
+        case ATTR_TYPE:
+            if(update)
+                lv_slider_set_type(obj, val % 3);
+            else
+                val = lv_slider_get_type(obj);
             break;
 
         default:
@@ -1282,29 +1323,35 @@ static hasp_attribute_type_t special_attribute_src(lv_obj_t* obj, const char* pa
     if(!obj_check_type(obj, LV_HASP_IMAGE)) return HASP_ATTR_TYPE_NOT_FOUND;
 
     if(update) {
-        my_image_release_resources(obj);
 
         if(payload != strstr_P(payload, PSTR("http://")) &&  // not start with http
            payload != strstr_P(payload, PSTR("https://"))) { // not start with https
 
             if(payload == strstr_P(payload, PSTR("L:"))) { // startsWith command/
+                my_image_release_resources(obj);
                 lv_img_set_src(obj, payload);
 
             } else if(payload == strstr_P(payload, PSTR("/littlefs/"))) { // startsWith command/
                 char tempsrc[64] = "L:";
                 strncpy(tempsrc + 2, payload + 10, sizeof(tempsrc) - 2);
+                my_image_release_resources(obj);
                 lv_img_set_src(obj, tempsrc);
 
             } else {
                 char tempsrc[64] = LV_SYMBOL_DUMMY;
                 strncpy(tempsrc + 3, payload, sizeof(tempsrc) - 3);
+                my_image_release_resources(obj);
                 lv_img_set_src(obj, tempsrc);
             }
 
         } else {
 #if defined(ARDUINO) && defined(ARDUINO_ARCH_ESP32)
+#if HASP_USE_WIFI > 0 || HASP_USE_ETHERNET > 0
             HTTPClient http;
+            // http.begin(payload, (const char*)rootca_crt_bundle_start);
             http.begin(payload);
+            http.setTimeout(5000);
+            http.setConnectTimeout(5000);
 
             // const char* hdrs[] = {"Content-Type"};
             // size_t numhdrs     = sizeof(hdrs) / sizeof(char*);
@@ -1407,7 +1454,7 @@ static hasp_attribute_type_t special_attribute_src(lv_obj_t* obj, const char* pa
                         // LOG_DEBUG(TAG_ATTR, D_BULLET "IMG DATA: %d bytes read=%d buf_len=%d", c, read, buf_len);
                         read += c;
                     } else {
-                        //  delay(1); // wait for data
+                        delay(1); // wait for data
                     }
                 }
 
@@ -1437,6 +1484,7 @@ static hasp_attribute_type_t special_attribute_src(lv_obj_t* obj, const char* pa
                                 img_dsc->header.h, img_dsc->header.cf, img_dsc->data_size);
                 }
 
+                my_image_release_resources(obj);
                 lv_img_set_src(obj, img_dsc);
                 // LOG_DEBUG(TAG_ATTR, "%s %d %x -> %x", __FILE__, __LINE__, img_buf_start, img_buf_start_pos);
 
@@ -1444,7 +1492,8 @@ static hasp_attribute_type_t special_attribute_src(lv_obj_t* obj, const char* pa
                 LOG_WARNING(TAG_ATTR, "HTTP result %d", httpCode);
             }
             http.end();
-#endif
+#endif // HASP_USE_NETWORK
+#endif // ESP32
         }
     } else {
         const void* src = lv_img_get_src(obj);
@@ -1582,6 +1631,9 @@ static hasp_attribute_type_t attribute_common_mode(lv_obj_t* obj, const char* pa
             }
             return HASP_ATTR_TYPE_INT;
 
+        case LV_HASP_CPICKER:
+            return hasp_process_cpicker_mode(obj, payload, text, update);
+
         default:
             break; // not found
     }
@@ -1605,6 +1657,30 @@ static hasp_attribute_type_t attribute_common_tag(lv_obj_t* obj, uint16_t attr_h
             }
             break; // attribute_found
 
+        case ATTR_ACTION:
+            if(update) {
+                my_obj_set_action(obj, payload);
+            } else {
+                if(my_obj_get_action(obj)) {
+                    *text = (char*)my_obj_get_action(obj);
+                } else {
+                    strcpy_P(*text, "null"); // TODO : Literal String
+                }
+            }
+            break; // attribute_found
+
+        case ATTR_SWIPE:
+            if(update) {
+                my_obj_set_swipe(obj, payload);
+            } else {
+                if(my_obj_get_swipe(obj)) {
+                    *text = (char*)my_obj_get_swipe(obj);
+                } else {
+                    strcpy_P(*text, "null"); // TODO : Literal String
+                }
+            }
+            break; // attribute_found
+
         default:
             return HASP_ATTR_TYPE_NOT_FOUND;
     }
@@ -1620,6 +1696,7 @@ static hasp_attribute_type_t attribute_common_json(lv_obj_t* obj, uint16_t attr_
 
             if(update) {
 
+                // StaticJsonDocument<1024> json;
                 size_t maxsize = (512u + JSON_OBJECT_SIZE(25));
                 DynamicJsonDocument json(maxsize);
 
@@ -1659,7 +1736,7 @@ static hasp_attribute_type_t attribute_common_json(lv_obj_t* obj, uint16_t attr_
     return HASP_ATTR_TYPE_METHOD_OK;
 }
 
-static hasp_attribute_type_t attribute_common_text(lv_obj_t* obj, const char* attr, const char* payload, char** text,
+static hasp_attribute_type_t attribute_common_text(lv_obj_t* obj, uint16_t attr_hash, const char* payload, char** text,
                                                    bool update)
 {
     uint8_t obj_type = obj_get_type(obj);
@@ -1667,6 +1744,7 @@ static hasp_attribute_type_t attribute_common_text(lv_obj_t* obj, const char* at
     hasp_attr_update_char_const_t list[] = {
         {LV_HASP_BUTTON, ATTR_TEXT, my_btn_set_text, my_btn_get_text},
         {LV_HASP_LABEL, ATTR_TEXT, my_label_set_text, my_label_get_text},
+        {LV_HASP_LABEL, ATTR_TEMPLATE, my_obj_set_template, my_obj_get_template},
         {LV_HASP_CHECKBOX, ATTR_TEXT, lv_checkbox_set_text, lv_checkbox_get_text},
         {LV_HASP_TABVIEW, ATTR_TEXT, my_tabview_set_text, my_tabview_get_text},
         {LV_HASP_TEXTAREA, ATTR_TEXT, lv_textarea_set_text, lv_textarea_get_text},
@@ -1678,7 +1756,7 @@ static hasp_attribute_type_t attribute_common_text(lv_obj_t* obj, const char* at
     };
 
     for(int i = 0; i < sizeof(list) / sizeof(list[0]); i++) {
-        if(obj_type == list[i].obj_type) {
+        if(obj_type == list[i].obj_type && attr_hash == list[i].hash) {
             if(update)
                 list[i].set(obj, payload);
             else
@@ -1688,24 +1766,26 @@ static hasp_attribute_type_t attribute_common_text(lv_obj_t* obj, const char* at
         }
     }
 
-    // Special cases
-    // {LV_HASP_DROPDOWN, set_text_not_implemented, my_dropdown_get_text},
-    // {LV_HASP_ROLLER, set_text_not_implemented, my_roller_get_text},
-    switch(obj_get_type(obj)) {
-        case LV_HASP_DROPDOWN: {
-            lv_dropdown_get_selected_str(obj, *text, 128);
-            if(update) return HASP_ATTR_TYPE_STR_READONLY;
-            break;
-        }
+    if(attr_hash == ATTR_TEXT || attr_hash == ATTR_TXT) {
+        // Special cases
+        // {LV_HASP_DROPDOWN, set_text_not_implemented, my_dropdown_get_text},
+        // {LV_HASP_ROLLER, set_text_not_implemented, my_roller_get_text},
+        switch(obj_get_type(obj)) {
+            case LV_HASP_DROPDOWN: {
+                lv_dropdown_get_selected_str(obj, *text, 128);
+                if(update) return HASP_ATTR_TYPE_STR_READONLY;
+                break;
+            }
 
-        case LV_HASP_ROLLER: {
-            lv_roller_get_selected_str(obj, *text, 128);
-            if(update) return HASP_ATTR_TYPE_STR_READONLY;
-            break;
-        }
+            case LV_HASP_ROLLER: {
+                lv_roller_get_selected_str(obj, *text, 128);
+                if(update) return HASP_ATTR_TYPE_STR_READONLY;
+                break;
+            }
 
-        default:
-            return HASP_ATTR_TYPE_NOT_FOUND;
+            default:
+                return HASP_ATTR_TYPE_NOT_FOUND;
+        }
     }
 
     return HASP_ATTR_TYPE_STR;
@@ -1773,7 +1853,8 @@ static hasp_attribute_type_t specific_bool_attribute(lv_obj_t* obj, uint16_t att
     { // bool but obj is not const
         hasp_attr_update_bool_t list[] = {
             {LV_HASP_DROPDOWN, ATTR_SHOW_SELECTED, lv_dropdown_set_show_selected, lv_dropdown_get_show_selected},
-            {LV_HASP_IMAGE, ATTR_ANTIALIAS, lv_img_set_antialias, lv_img_get_antialias}};
+            {LV_HASP_IMAGE, ATTR_ANTIALIAS, lv_img_set_antialias, lv_img_get_antialias},
+            {LV_HASP_CPICKER, ATTR_MODE_FIXED, lv_cpicker_set_color_mode_fixed, lv_cpicker_get_color_mode_fixed}};
         if(do_attribute(list, obj, attr_hash, val, update)) return HASP_ATTR_TYPE_BOOL;
     }
 
@@ -2249,7 +2330,7 @@ static hasp_attribute_type_t attribute_common_method(lv_obj_t* obj, uint16_t att
         case ATTR_OPEN:
         case ATTR_CLOSE:
             if(!obj_check_type(obj, LV_HASP_DROPDOWN)) return HASP_ATTR_TYPE_NOT_FOUND;
-            event_reset_last_value_sent(); // Prevents manual selection bug because no manual 'down' occured
+            event_reset_last_value_sent(); // Prevents manual selection bug because no manual 'down' occurred
             if(attr_hash == ATTR_OPEN)
                 lv_dropdown_open(obj);
             else
@@ -2288,12 +2369,12 @@ static hasp_attribute_type_t attribute_common_int(lv_obj_t* obj, uint16_t attr_h
                 val = obj->user_data.groupid;
             break; // attribute_found
 
-        case ATTR_TRANSITION:
-            if(update)
-                obj->user_data.transitionid = (uint8_t)val;
-            else
-                val = obj->user_data.transitionid;
-            break; // attribute_found
+        // case ATTR_TRANSITION:
+        //     if(update)
+        //         obj->user_data.transitionid = (uint8_t)val;
+        //     else
+        //         val = obj->user_data.transitionid;
+        //     break; // attribute_found
 
         case ATTR_OBJID:
             if(update && val != obj->user_data.objid) return HASP_ATTR_TYPE_INT_READONLY;
@@ -2414,12 +2495,12 @@ static hasp_attribute_type_t attribute_common_bool(lv_obj_t* obj, uint16_t attr_
                 val = !(lv_obj_get_state(obj, LV_BTN_PART_MAIN) & LV_STATE_DISABLED);
             break; // attribute_found
 
-        case ATTR_SWIPE:
-            if(update)
-                obj->user_data.swipeid = (!!val) % 16;
-            else
-                val = obj->user_data.swipeid;
-            break; // attribute_found
+        // case ATTR_SWIPE:
+        //     if(update)
+        //         obj->user_data.swipeid = (!!val) % 16;
+        //     else
+        //         val = obj->user_data.swipeid;
+        //     break; // attribute_found
 
         case ATTR_TOGGLE:
             switch(obj_get_type(obj)) {
@@ -2499,8 +2580,8 @@ void attr_out_json(lv_obj_t* obj, const char* attribute, const char* data)
 
 void attr_out_int(lv_obj_t* obj, const char* attribute, int32_t val)
 {
-    char data[9];
-    itoa(val, data, sizeof(data));
+    char data[16];
+    itoa(val, data, DEC);
     attr_out(obj, attribute, data, true);
 }
 
@@ -2558,7 +2639,7 @@ void hasp_process_obj_attribute(lv_obj_t* obj, const char* attribute, const char
     switch(attr_hash) {
         case ATTR_GROUPID:
         case ATTR_ID:
-        case ATTR_TRANSITION:
+        // case ATTR_TRANSITION:
         case ATTR_OBJID:
         case ATTR_X:
         case ATTR_Y:
@@ -2575,7 +2656,7 @@ void hasp_process_obj_attribute(lv_obj_t* obj, const char* attribute, const char
         case ATTR_HIDDEN:
         case ATTR_TOGGLE:
         case ATTR_CLICK:
-        case ATTR_SWIPE:
+        // case ATTR_SWIPE:
         case ATTR_ENABLED:
             val = Parser::is_true(payload);
             ret = attribute_common_bool(obj, attr_hash, val, update);
@@ -2596,16 +2677,19 @@ void hasp_process_obj_attribute(lv_obj_t* obj, const char* attribute, const char
             ret = attribute_common_val(obj, val, update);
             break;
 
-        case ATTR_TXT: // TODO: remove
-            LOG_WARNING(TAG_HASP, F(D_ATTRIBUTE_OBSOLETE D_ATTRIBUTE_INSTEAD), attribute, "text");
+        // case ATTR_TXT: // TODO: remove
+        //     LOG_WARNING(TAG_HASP, F(D_ATTRIBUTE_OBSOLETE D_ATTRIBUTE_INSTEAD), attribute, "text");
         case ATTR_TEXT:
-            ret = attribute_common_text(obj, attribute, payload, &text, update);
+        case ATTR_TEMPLATE:
+            ret = attribute_common_text(obj, attr_hash, payload, &text, update);
             break;
 
         case ATTR_ALIGN:
             ret = attribute_common_align(obj, attribute, payload, &text, update);
             break;
         case ATTR_TAG:
+        case ATTR_ACTION:
+        case ATTR_SWIPE:
             ret = attribute_common_tag(obj, attr_hash, payload, &text, update);
             break;
         case ATTR_JSONL:
@@ -2632,13 +2716,13 @@ void hasp_process_obj_attribute(lv_obj_t* obj, const char* attribute, const char
 
             // case ATTR_BTN_POS:
 
-        case ATTR_ACTION:
-            if(update)
-                obj->user_data.actionid = Parser::get_action_id(payload);
-            else
-                val = obj->user_data.actionid;
-            ret = HASP_ATTR_TYPE_INT;
-            break;
+            /*    case ATTR_ACTION:
+                    if(update)
+                        obj->user_data.actionid = Parser::get_action_id(payload);
+                    else
+                        val = obj->user_data.actionid;
+                    ret = HASP_ATTR_TYPE_INT;
+                    break;*/
 
             // case ATTR_SYMBOL:
             //     (update) ? lv_dropdown_set_symbol(obj, payload) :
@@ -2693,6 +2777,7 @@ void hasp_process_obj_attribute(lv_obj_t* obj, const char* attribute, const char
         case ATTR_SHOW_SELECTED:
         case ATTR_Y_INVERT:
         case ATTR_ANTIALIAS:
+        case ATTR_MODE_FIXED:
             val = Parser::is_true(payload);
             ret = specific_bool_attribute(obj, attr_hash, val, update);
             break;
@@ -2703,6 +2788,19 @@ void hasp_process_obj_attribute(lv_obj_t* obj, const char* attribute, const char
             val = strtol(payload, nullptr, DEC);
             ret = specific_page_attribute(obj, attr_hash, val, update);
             break;
+        case ATTR_NAME: {
+            uint8_t pageid = 99;
+            haspPages.get_id(obj, &pageid);
+            if(update) {
+                haspPages.set_name(pageid, payload);
+                LOG_VERBOSE(TAG_HASP, F("%s %d"), haspPages.get_name(pageid), pageid);
+            } else {
+                text = haspPages.get_name(pageid);
+                LOG_VERBOSE(TAG_HASP, F("%s %d"), haspPages.get_name(pageid), pageid);
+            }
+            ret = HASP_ATTR_TYPE_STR;
+            break;
+        }
 
         case ATTR_DIRECTION:
             val = strtol(payload, nullptr, DEC);
@@ -2724,6 +2822,11 @@ void hasp_process_obj_attribute(lv_obj_t* obj, const char* attribute, const char
             case LV_HASP_ARC:
                 val = strtol(payload, nullptr, DEC);
                 ret = hasp_process_arc_attribute(obj, attr_hash, val, update);
+                break;
+
+            case LV_HASP_SLIDER:
+                val = strtol(payload, nullptr, DEC);
+                ret = hasp_process_slider_attribute(obj, attr_hash, val, update);
                 break;
 
             case LV_HASP_SPINNER:

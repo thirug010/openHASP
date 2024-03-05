@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #ifndef HASP_MQTT_H
@@ -22,7 +22,7 @@ void mqttEvery5Seconds(bool wifiIsConnected);
 void mqttStart();
 void mqttStop();
 
-int mqtt_send_object_state(uint8_t pageid, uint8_t btnid, const char* payload);
+// int mqtt_send_object_state(uint8_t pageid, uint8_t btnid, const char* payload);
 int mqtt_send_state(const char* subtopic, const char* payload);
 int mqtt_send_discovery(const char* payload, size_t len);
 int mqttPublish(const char* topic, const char* payload, size_t len, bool retain);
@@ -32,8 +32,8 @@ void mqtt_get_info(JsonDocument& doc);
 
 #if HASP_USE_CONFIG > 0
 bool mqttGetConfig(const JsonObject& settings);
-bool mqttSetConfig(const JsonObject& settings);
 #endif
+bool mqttSetConfig(const JsonObject& settings);
 
 #ifndef MQTT_PREFIX
 #define MQTT_PREFIX "hasp"
@@ -73,24 +73,24 @@ bool mqttSetConfig(const JsonObject& settings);
 // These defaults may be overwritten with values saved by the web interface
 
 #ifndef MQTT_GROUPNAME
-#define MQTT_GROUPNAME "plates";
+#define MQTT_GROUPNAME "plates"
 #endif
 
 #ifndef MQTT_HOSTNAME
 #ifndef MQTT_HOST
-#define MQTT_HOSTNAME "";
+#define MQTT_HOSTNAME ""
 #else
-#define MQTT_HOSTNAME MQTT_HOST;
+#define MQTT_HOSTNAME MQTT_HOST
 #endif
 #endif
 
 #ifndef MQTT_PORT
-#define MQTT_PORT 1883;
+#define MQTT_PORT 1883
 #endif
 
 #ifndef MQTT_USERNAME
 #ifndef MQTT_USER
-#define MQTT_USERNAME "";
+#define MQTT_USERNAME ""
 #else
 #define MQTT_USERNAME MQTT_USER;
 #endif
@@ -98,9 +98,9 @@ bool mqttSetConfig(const JsonObject& settings);
 
 #ifndef MQTT_PASSWORD
 #ifndef MQTT_PASSW
-#define MQTT_PASSWORD "";
+#define MQTT_PASSWORD ""
 #else
-#define MQTT_PASSWORD MQTT_PASSW;
+#define MQTT_PASSWORD MQTT_PASSW
 #endif
 #endif
 

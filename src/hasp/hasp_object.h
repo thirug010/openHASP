@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #ifndef HASP_OBJECT_H
@@ -10,14 +10,21 @@ const char FP_SKIP[] PROGMEM     = "skip";
 const char FP_PAGE[] PROGMEM     = "page";
 const char FP_ID[] PROGMEM       = "id";
 const char FP_OBJ[] PROGMEM      = "obj";
-const char FP_OBJID[] PROGMEM    = "objid";
+// const char FP_OBJID[] PROGMEM    = "objid"; // obsolete
 const char FP_PARENTID[] PROGMEM = "parentid";
 const char FP_GROUPID[] PROGMEM  = "groupid";
 
 typedef struct
 {
-    uint8_t pageid;
-    uint8_t objid;
+    char* action;
+    char* tag;
+    const char* swipe;
+} hasp_ext_user_data_t;
+
+typedef struct
+{
+    lv_obj_t* obj;
+    char* templ;
     uint16_t interval;
 } hasp_task_user_data_t;
 
@@ -41,8 +48,10 @@ enum lv_hasp_obj_type_t {
     LV_HASP_TABVIEW   = 6, // placeholder
     LV_HASP_TAB       = 7, // placeholder
     LV_HASP_PAGE      = 8, // Obsolete in v8
+    LV_HASP_SPAN      = 9, // placeholder
 
     /* Controls */
+    LV_HASP_KEYBOARD  = 10, // placeholder
     LV_HASP_OBJECT    = 11,
     LV_HASP_BUTTON    = 12,
     LV_HASP_BTNMATRIX = 13,
@@ -71,12 +80,17 @@ enum lv_hasp_obj_type_t {
     LV_HASP_LIST     = 31, // placeholder
     LV_HASP_TABLE    = 32,
     LV_HASP_CALENDER = 33,
+    LV_HASP_MENU     = 34, // placeholder
 
     /* Graphics */
-    LV_HASP_LINE   = 36,
-    LV_HASP_IMAGE  = 37, // placeholder
-    LV_HASP_CANVAS = 38, // placeholder
-    LV_HASP_MASK   = 39, // placeholder
+    LV_HASP_LINE      = 36,
+    LV_HASP_IMAGE     = 37, // placeholder
+    LV_HASP_ANIMIMAGE = 38, // placeholder
+    LV_HASP_CANVAS    = 39, // placeholder
+    LV_HASP_MASK      = 40, // placeholder
+
+    /* Custom */
+    LV_HASP_ALARM = 60,
 };
 
 void hasp_new_object(const JsonObject& config, uint8_t& saved_page_id);
@@ -112,7 +126,7 @@ inline lv_hasp_obj_type_t obj_get_type(const lv_obj_t* obj)
  */
 inline const char* obj_get_type_name(const lv_obj_t* obj)
 {
-    if (obj_get_type(obj) == LV_HASP_TAB) return "tab"; // LVGL reports tab objects as "lv_page"
+    if(obj_get_type(obj) == LV_HASP_TAB) return "tab"; // LVGL reports tab objects as "lv_page"
 
     lv_obj_type_t list;
     lv_obj_get_type(obj, &list);
@@ -123,7 +137,7 @@ inline const char* obj_get_type_name(const lv_obj_t* obj)
  * Check if an lvgl objecttype name corresponds to a given HASP object ID
  * @param obj an lv_obj_t* of the object to check its type
  * @param haspobjtype the HASP object ID to check against
- * @return true or false wether the types match
+ * @return true or false whether the types match
  * @note
  */
 inline bool obj_check_type(const lv_obj_t* obj, lv_hasp_obj_type_t haspobjtype)
@@ -175,5 +189,6 @@ inline bool obj_check_type(const lv_obj_t* obj, lv_hasp_obj_type_t haspobjtype)
 #define HASP_OBJ_TABVIEW 63226
 #define HASP_OBJ_TAB 7861
 #define HASP_OBJ_ARC 64594
+#define HASP_OBJ_ALARM 3153
 
 #endif

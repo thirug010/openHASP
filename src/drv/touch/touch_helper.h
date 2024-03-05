@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #ifndef HASP_TOUCH_HELPER_H
@@ -30,7 +30,7 @@ void touch_scan(TwoWire& i2c)
 
         if(error == 0) {
             snprintf_P(buffer, sizeof(buffer), PSTR(D_BULLET " Found device 0x%02x"), address);
-            LOG_VERBOSE(TAG_DRVR, buffer, address);
+            LOG_INFO(TAG_DRVR, buffer, address);
             nDevices++;
         } else if(error == 4) {
             snprintf_P(buffer, sizeof(buffer), PSTR(D_BULLET "Unknown error at address 0x%02x"), address);

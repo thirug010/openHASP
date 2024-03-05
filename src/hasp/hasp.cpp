@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #include "hasplib.h"
@@ -11,7 +11,7 @@
 #include "ArduinoLog.h"
 #endif
 
-#if defined(WINDOWS) || defined(POSIX)
+#if HASP_TARGET_PC
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -27,16 +27,15 @@
 
 #if HASP_USE_CONFIG > 0
 #include "lv_fs_if.h"
-#include "hasp_config.h"
 #include "font/hasp_font_loader.h"
-//#include "hasp_filesystem.h" included in hasp_conf.h
+// #include "hasp_filesystem.h" included in hasp_conf.h
 #endif
 
 #if HASP_USE_EEPROM > 0
 #include "EEPROM.h"
 #endif
 
-//#if LV_USE_HASP
+// #if LV_USE_HASP
 
 /*********************
  *      DEFINES
@@ -73,13 +72,14 @@ LV_IMG_DECLARE(img_bubble_pattern)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 uint8_t hasp_sleep_state        = HASP_SLEEP_OFF; // Used in hasp_drv_touch.cpp
+bool hasp_first_touch_state     = false;          // Track first touch state
 static uint16_t sleepTimeShort  = 60;             // 1 second resolution
 static uint16_t sleepTimeLong   = 120;            // 1 second resolution
 static uint32_t sleepTimeOffset = 0;              // 1 second resolution
 
-uint8_t haspStartDim       = 255;
-uint8_t haspStartPage      = 1;
-uint8_t haspThemeId        = 2;
+uint8_t haspStartDim       = HASP_START_DIM;
+uint8_t haspStartPage      = HASP_START_PAGE;
+uint8_t haspThemeId        = HASP_THEME_ID;
 uint16_t haspThemeHue      = 200;
 lv_color_t color_primary   = lv_color_hsv_to_rgb(200, 100, 100);
 lv_color_t color_secondary = lv_color_hsv_to_rgb(200, 100, 100);
@@ -111,6 +111,8 @@ lv_font_t* hasp_get_font(uint8_t fontid)
  */
 HASP_ATTRIBUTE_FAST_MEM void hasp_update_sleep_state()
 {
+    if(hasp_first_touch_state) return; // don't update sleep when first touch is still active
+
     uint32_t idle = lv_disp_get_inactive_time(lv_disp_get_default()) / 1000;
     idle += sleepTimeOffset; // To force a specific state
 
@@ -119,18 +121,21 @@ HASP_ATTRIBUTE_FAST_MEM void hasp_update_sleep_state()
             gui_hide_pointer(true);
             hasp_sleep_state = HASP_SLEEP_LONG;
             dispatch_idle_state(HASP_SLEEP_LONG);
+            dispatch_run_script(NULL, "L:/idle_long.cmd", TAG_HASP);
         }
     } else if(sleepTimeShort > 0 && idle >= sleepTimeShort) {
         if(hasp_sleep_state != HASP_SLEEP_SHORT) {
             gui_hide_pointer(true);
             hasp_sleep_state = HASP_SLEEP_SHORT;
             dispatch_idle_state(HASP_SLEEP_SHORT);
+            dispatch_run_script(NULL, "L:/idle_short.cmd", TAG_HASP);
         }
     } else {
         if(hasp_sleep_state != HASP_SLEEP_OFF) {
             gui_hide_pointer(false);
             hasp_sleep_state = HASP_SLEEP_OFF;
             dispatch_idle_state(HASP_SLEEP_OFF);
+            dispatch_run_script(NULL, "L:/idle_off.cmd", TAG_HASP);
         }
     }
 }
@@ -156,7 +161,7 @@ void hasp_set_sleep_state(uint8_t state)
             break;
         case HASP_SLEEP_OFF:
             hasp_set_sleep_offset(0);
-            hasp_set_wakeup_touch(false);
+            // hasp_set_wakeup_touch(false);
             break;
         default:
             return;
@@ -186,10 +191,15 @@ static lv_task_t* antiburn_task;
 
 bool hasp_stop_antiburn()
 {
-    bool changed    = false;
-    lv_obj_t* layer = lv_disp_get_layer_sys(NULL);
+    bool changed = false;
 
+    /* Refresh screen to flush callback */
+    lv_disp_t* disp       = lv_disp_get_default();
+    disp->driver.flush_cb = gui_flush_cb;
+
+    // lv_obj_t* layer = lv_disp_get_layer_sys(NULL);
     // if(layer) lv_obj_set_style_local_bg_opa(layer, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_OPA_TRANSP);
+
     if(antiburn_task) {
         lv_task_del(antiburn_task);
         lv_obj_invalidate(lv_scr_act());
@@ -197,8 +207,8 @@ bool hasp_stop_antiburn()
     }
     antiburn_task = NULL;
     hasp_set_wakeup_touch(haspDevice.get_backlight_power() == false); // enabled if backlight is OFF
-    gui_hide_pointer(false);
 
+    // gui_hide_pointer(false);
     return changed;
 }
 
@@ -206,32 +216,51 @@ void hasp_antiburn_cb(lv_task_t* task)
 {
     lv_obj_t* layer = lv_disp_get_layer_sys(NULL);
     if(layer) {
-        // lv_color_t color[5] = {LV_COLOR_BLACK, LV_COLOR_WHITE, LV_COLOR_RED, LV_COLOR_LIME, LV_COLOR_BLUE};
-        // lv_obj_set_style_local_bg_color(layer, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, color[task->repeat_count % 5]);
-        // lv_obj_set_style_local_bg_opa(layer, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_OPA_COVER);
-        lv_disp_t* disp         = lv_disp_get_default();
-        lv_disp_drv_t* disp_drv = &disp->driver;
-        lv_area_t area;
-
-        area.x1 = 0;
-        area.x2 = disp_drv->hor_res - 1;
-        lv_color_t color[disp_drv->hor_res];
-
-        for(lv_coord_t y = 0; y < disp_drv->ver_res; y++) {
-            for(lv_coord_t x = 0; x < disp_drv->hor_res; x++) {
-#ifdef ARDUINO
-                color[x].full = random(UINT16_MAX);
-#else
-                color[x].full = random() * UINT16_MAX;
-#endif
-            }
-            area.y1 = y;
-            area.y2 = y;
-            haspTft.flush_pixels(disp_drv, &area, color);
+        // Fill a buffer with random colors
+        lv_color_t color[1223];
+        size_t len = sizeof(color) / sizeof(color[0]);
+        for(size_t x = 0; x < len; x++) {
+            color[x].full = HASP_RANDOM(UINT16_MAX);
         }
 
-        if(task->repeat_count != 1) return; // don't stop yet
+        // list of possible draw widths; prime numbers combat recurring patterns on the screen
+        uint8_t prime[] = {61,  67,  73,  79,  83,  89,  97,  103, 109, 113, 127, 131, 137, 139, 149,
+                           157, 163, 167, 173, 179, 181, 191, 197, 211, 223, 227, 229, 233, 251};
+
+        lv_disp_t* disp         = lv_disp_get_default();
+        lv_disp_drv_t* disp_drv = &disp->driver;
+
+        lv_coord_t scr_h = lv_obj_get_height(layer) - 1;
+        lv_coord_t scr_w = lv_obj_get_width(layer) - 1;
+        lv_coord_t w     = 487; // first prime larger than 480
+        lv_area_t area;
+
+        area.y1 = 0;
+        while(area.y1 <= scr_h) {
+            if(w > scr_w) w = scr_w; // limit to the actual screenwidth
+            if(w > len) w = len;     // don't overrun the buffer
+            lv_coord_t h    = len / w;
+            size_t headroom = len % w; // additional bytes in the buffer that can be used for a random offset
+
+            area.y2 = area.y1 + h - 1;
+            if(area.y2 > scr_h) area.y2 = scr_h;
+
+            area.x1 = 0;
+            while(area.x1 <= scr_w) {
+                area.x2 = area.x1 + w - 1;
+                if(area.x2 > scr_w) area.x2 = scr_w;
+
+                size_t offset = headroom ? HASP_RANDOM(headroom) : 0;
+                haspTft.flush_pixels(disp_drv, &area, color + offset);
+                area.x1 += w;
+            }
+
+            w = prime[HASP_RANDOM(sizeof(prime))]; // new random width
+            area.y1 += h;
+        }
     }
+
+    if(task->repeat_count != 1) return; // don't stop yet
 
     // task is about to get deleted
     hasp_stop_antiburn();
@@ -247,13 +276,20 @@ void hasp_set_antiburn(int32_t repeat_count, uint32_t period)
         lv_obj_t* layer = lv_disp_get_layer_sys(NULL);
         if(!layer) return;
 
-        if(!antiburn_task) antiburn_task = lv_task_create(hasp_antiburn_cb, period, LV_TASK_PRIO_LOWEST, NULL);
+        if(!antiburn_task) antiburn_task = lv_task_create(hasp_antiburn_cb, period, LV_TASK_PRIO_LOW, NULL);
         if(antiburn_task) {
-            lv_obj_set_event_cb(layer, first_touch_event_handler);
-            lv_obj_set_click(layer, true);
+            // lv_obj_set_style_local_bg_color(layer, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_COLOR_BLACK);
+            // lv_obj_set_style_local_bg_opa(layer, LV_OBJ_PART_MAIN, LV_STATE_DEFAULT, LV_OPA_COVER);
+            hasp_set_wakeup_touch(true);
             lv_task_set_repeat_count(antiburn_task, repeat_count);
             lv_task_set_period(antiburn_task, period);
-            gui_hide_pointer(true);
+            //  gui_hide_pointer(true);
+
+            /* Refresh screen to antiburn callback */
+            lv_disp_t* disp       = lv_disp_get_default();
+            disp->driver.flush_cb = gui_antiburn_cb;
+            lv_obj_invalidate(lv_scr_act());
+
         } else {
             LOG_INFO(TAG_HASP, F("Antiburn %s"), D_INFO_FAILED);
         }
@@ -279,6 +315,7 @@ void hasp_set_wakeup_touch(bool en)
     if(!layer) return;
 
     if(lv_obj_get_click(layer) != en) {
+        hasp_first_touch_state = en;
         lv_obj_set_event_cb(layer, first_touch_event_handler);
         lv_obj_set_click(layer, en);
         LOG_INFO(TAG_HASP, F("First touch %s"), en ? D_SETTING_ENABLED : D_SETTING_DISABLED);
@@ -353,7 +390,7 @@ void haspReconnect()
 
 // String progress_str((char *)0);
 
-// Shows/hides the the global progress bar and updates the value
+// Shows/hides the global progress bar and updates the value
 void haspProgressVal(uint8_t val)
 {
     lv_obj_t* layer = lv_disp_get_layer_sys(NULL);
@@ -541,14 +578,14 @@ void haspSetup(void)
 
     /* ********** Font Initializations ********** */
 
-    LOG_WARNING(TAG_ATTR, "%s %d %x", __FILE__, __LINE__, nullptr);
-    LOG_WARNING(TAG_ATTR, "%s %d %x", __FILE__, __LINE__, haspFonts[0]);
+    // LOG_WARNING(TAG_ATTR, "%s %d %x", __FILE__, __LINE__, nullptr);
+    // LOG_WARNING(TAG_ATTR, "%s %d %x", __FILE__, __LINE__, haspFonts[0]);
     // LOG_WARNING(TAG_ATTR, "%s %d %x", __FILE__, __LINE__, &robotocondensed_regular_16);
 
-    if(haspFonts[0] == nullptr) haspFonts[0] = LV_THEME_DEFAULT_FONT_SMALL;
-    if(haspFonts[1] == nullptr) haspFonts[1] = LV_THEME_DEFAULT_FONT_NORMAL;
-    if(haspFonts[2] == nullptr) haspFonts[2] = LV_THEME_DEFAULT_FONT_SUBTITLE;
-    if(haspFonts[3] == nullptr) haspFonts[3] = LV_THEME_DEFAULT_FONT_TITLE;
+    haspFonts[0] = LV_THEME_DEFAULT_FONT_SMALL;
+    haspFonts[1] = LV_THEME_DEFAULT_FONT_NORMAL;
+    haspFonts[2] = LV_THEME_DEFAULT_FONT_SUBTITLE;
+    haspFonts[3] = LV_THEME_DEFAULT_FONT_TITLE;
 
     hasp_set_theme(haspThemeId);
 
@@ -562,7 +599,7 @@ void haspSetup(void)
 
     hasp_init();
     hasp_load_json();
-    haspPages.set(haspStartPage, LV_SCR_LOAD_ANIM_FADE_ON);
+    haspPages.set(haspStartPage, LV_SCR_LOAD_ANIM_NONE, 0, 0);
 
     // lv_obj_t* obj        = lv_datetime_create(haspPages.get_obj(haspPages.get()), NULL);
     // obj->user_data.objid = LV_HASP_DATETIME;
@@ -718,7 +755,7 @@ void hasp_get_info(JsonDocument& doc)
     info[F(D_INFO_FREE_HEAP)] = size_buf;
     Parser::format_bytes(haspDevice.get_free_max_block(), size_buf, sizeof(size_buf));
     info[F(D_INFO_FREE_BLOCK)]    = size_buf;
-    info[F(D_INFO_FRAGMENTATION)] = haspDevice.get_heap_fragmentation();
+    info[F(D_INFO_FRAGMENTATION)] = std::to_string(haspDevice.get_heap_fragmentation()) + "%";
 
 #if ARDUINO_ARCH_ESP32
     if(psramFound()) {
@@ -729,6 +766,7 @@ void hasp_get_info(JsonDocument& doc)
     }
 #endif
 
+#if LV_MEM_CUSTOM == 0
     info = doc.createNestedObject(F(D_INFO_LVGL_MEMORY));
     lv_mem_monitor_t mem_mon;
     lv_mem_monitor(&mem_mon);
@@ -736,7 +774,8 @@ void hasp_get_info(JsonDocument& doc)
     info[F(D_INFO_TOTAL_MEMORY)] = size_buf;
     Parser::format_bytes(mem_mon.free_size, size_buf, sizeof(size_buf));
     info[F(D_INFO_FREE_MEMORY)]   = size_buf;
-    info[F(D_INFO_FRAGMENTATION)] = mem_mon.frag_pct;
+    info[F(D_INFO_FRAGMENTATION)] = std::to_string(mem_mon.frag_pct) + "%";
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -782,7 +821,7 @@ bool haspGetConfig(const JsonObject& settings)
  *
  * Read the settings from json and sets the application variables.
  *
- * @note: data pixel should be formated to uint32_t RGBA. Imagemagick requirements.
+ * @note: data pixel should be formatted to uint32_t RGBA. Imagemagick requirements.
  *
  * @param[in] settings    JsonObject with the config settings.
  **/
@@ -793,20 +832,20 @@ bool haspSetConfig(const JsonObject& settings)
     JsonVariant color_str;
     bool changed = false;
 
-    changed |= configSet(haspStartPage, settings[FPSTR(FP_CONFIG_STARTPAGE)], F("haspStartPage"));
-    changed |= configSet(haspStartDim, settings[FPSTR(FP_CONFIG_STARTDIM)], F("haspStartDim"));
+    changed |= configSet(haspStartPage, settings[FPSTR(FP_CONFIG_STARTPAGE)], "haspStartPage");
+    changed |= configSet(haspStartDim, settings[FPSTR(FP_CONFIG_STARTDIM)], "haspStartDim");
 
     { // Theme related settings
         // Set from Hue first
         bool theme_changed = false;
-        theme_changed |= configSet(haspThemeId, settings[FPSTR(FP_CONFIG_THEME)], F("haspThemeId"));
-        theme_changed |= configSet(haspThemeHue, settings[FPSTR(FP_CONFIG_HUE)], F("haspThemeHue"));
+        theme_changed |= configSet(haspThemeId, settings[FPSTR(FP_CONFIG_THEME)], "haspThemeId");
+        theme_changed |= configSet(haspThemeHue, settings[FPSTR(FP_CONFIG_HUE)], "haspThemeHue");
         color_primary   = lv_color_hsv_to_rgb(haspThemeHue, 100, 100);
-        color_secondary = lv_color_hsv_to_rgb(haspThemeHue, 100, 100);
+        color_secondary = lv_color_hsv_to_rgb(20, 60, 100);
 
         // Check for color1 and color2
-        theme_changed |= configSet(color_primary, settings[FPSTR(FP_CONFIG_COLOR1)], F("haspColor1"));
-        theme_changed |= configSet(color_secondary, settings[FPSTR(FP_CONFIG_COLOR2)], F("haspColor2"));
+        theme_changed |= configSet(color_primary, settings[FPSTR(FP_CONFIG_COLOR1)], "haspColor1");
+        theme_changed |= configSet(color_secondary, settings[FPSTR(FP_CONFIG_COLOR2)], "haspColor2");
 
         changed |= theme_changed;
         // if(theme_changed) hasp_set_theme(haspThemeId); // LVGL is not inited at config load time

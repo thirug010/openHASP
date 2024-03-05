@@ -1,15 +1,16 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #include "hasplib.h"
 
 #if HASP_USE_CONSOLE > 0
 
+#if HASP_TARGET_ARDUINO
 #include "ConsoleInput.h"
 #include <StreamUtils.h>
+#endif
 
 #include "hasp_debug.h"
-#include "hasp_config.h"
 #include "hasp_console.h"
 
 #include "../../hasp/hasp_dispatch.h"
@@ -18,15 +19,18 @@
 extern hasp_http_config_t http_config;
 #endif
 
+#if HASP_TARGET_ARDUINO
 // Create a new Stream that buffers all writes to serialClient
-HardwareSerial* bufferedSerialClient = &Serial;
+HardwareSerial* bufferedSerialClient = (HardwareSerial*)&HASP_SERIAL;
+ConsoleInput* console;
+#endif
 
 uint8_t consoleLoginState   = CONSOLE_UNAUTHENTICATED;
 uint16_t serialPort         = 0;
 uint8_t consoleEnabled      = true; // Enable serial debug output
 uint8_t consoleLoginAttempt = 0;    // Initial attempt
-ConsoleInput* console;
 
+#if HASP_TARGET_ARDUINO
 void console_update_prompt()
 {
     if(console) console->update(__LINE__);
@@ -102,13 +106,28 @@ static void console_process_line(const char* input)
             }
     }
 }
+#elif HASP_TARGET_PC
+static bool console_running = true;
+static void console_thread(void* arg)
+{
+    while(console_running) {
+        std::string input;
+        std::getline(std::cin, input);
+        dispatch_text_line(input.c_str(), TAG_CONS);
+    }
+}
+#endif
 
 void consoleStart()
 {
+#if HASP_TARGET_ARDUINO
     LOG_TRACE(TAG_MSGR, F(D_SERVICE_STARTING));
     console = new ConsoleInput(bufferedSerialClient, HASP_CONSOLE_BUFFER);
     if(console) {
-        debugStartSerial(); // open Serial port
+        if(!debugStartSerial()) { // failed to open Serial port
+            LOG_INFO(TAG_CONS, F(D_SERVICE_DISABLED));
+            return;
+        }
 
         /* Now register logger for serial */
         Log.registerOutput(0, bufferedSerialClient, HASP_LOG_LEVEL, true);
@@ -117,22 +136,34 @@ void consoleStart()
         LOG_INFO(TAG_CONS, F(D_SERVICE_STARTED));
 
         console->setLineCallback(console_process_line);
+        console->setAutoUpdate(false);
         console_logon(); // todo: logon
         console->setPrompt("Prompt > ");
     } else {
         console_logoff();
         LOG_ERROR(TAG_CONS, F(D_SERVICE_START_FAILED));
     }
+#elif HASP_TARGET_PC
+    LOG_TRACE(TAG_MSGR, F(D_SERVICE_STARTING));
+    haspDevice.run_thread(console_thread, NULL);
+#endif
 }
 
 void consoleStop()
 {
+#if HASP_TARGET_ARDUINO
     console_logoff();
     Log.unregisterOutput(0); // serialClient
-    Serial.end();
-
+    HASP_SERIAL.end();
     delete console;
     console = NULL;
+#elif HASP_TARGET_PC
+#if defined(WINDOWS)
+
+#elif defined(POSIX)
+
+#endif
+#endif
 }
 
 void consoleSetup()
@@ -144,8 +175,10 @@ void consoleSetup()
 
 IRAM_ATTR void consoleLoop()
 {
+#if HASP_TARGET_ARDUINO
     if(!console) return;
 
+    bool update = false;
     while(int16_t keypress = console->readKey()) {
         switch(keypress) {
 
@@ -158,10 +191,20 @@ IRAM_ATTR void consoleLoop()
                 break;
 
             case(ConsoleInput::KEY_FN)...(ConsoleInput::KEY_FN + 12):
-                dispatch_set_page(keypress - ConsoleInput::KEY_FN, LV_SCR_LOAD_ANIM_NONE);
+                dispatch_set_page(keypress - ConsoleInput::KEY_FN, LV_SCR_LOAD_ANIM_NONE, 500, 0);
                 break;
+
+            case 0:
+            case -1:
+                break;
+
+            default: {
+                update = true;
+            }
         }
     }
+    if(update) console_update_prompt();
+#endif
 }
 
 #if HASP_USE_CONFIG > 0

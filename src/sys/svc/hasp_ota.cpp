@@ -1,4 +1,4 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #if defined(ARDUINO_ARCH_ESP8266) || defined(ARDUINO_ARCH_ESP32)
@@ -6,7 +6,6 @@
 #include "hasplib.h"
 
 #include "hasp_debug.h"
-#include "hasp_config.h"
 #include "hasp_ota.h"
 
 #if defined(ARDUINO_ARCH_ESP8266)
@@ -23,6 +22,7 @@
 #include <HTTPClient.h>
 #include <HTTPUpdate.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <ArduinoOTA.h>
 #ifndef HASP_ARDUINOOTA_PORT
 #define HASP_ARDUINOOTA_PORT 3232
@@ -77,14 +77,14 @@ extern const uint8_t rootca_crt_bundle_start[] asm("_binary_data_cert_x509_crt_b
 #endif // ARDUINO_ARCH_ESP32
 
 static WiFiClientSecure secureClient;
-std::string otaUrl = "http://ota.netwize.be";
+/*std::string otaUrl = "http://ota.netwize.be";*/
 
-uint16_t arduinoOtaPort       = HASP_ARDUINOOTA_PORT;
+uint16_t arduinoOtaPort      = HASP_ARDUINOOTA_PORT;
 int8_t otaPrecentageComplete = -1;
 
 bool otaUpdateCheck()
 { // firmware update check
-    WiFiClientSecure wifiUpdateClientSecure;
+    /*WiFiClientSecure wifiUpdateClientSecure;
     HTTPClient updateClient;
     LOG_TRACE(TAG_OTA, F(D_OTA_CHECK_UPDATE), otaUrl.c_str());
 
@@ -98,7 +98,7 @@ bool otaUpdateCheck()
         return false;
     }
 
-    DynamicJsonDocument updateJson(1024);
+    StaticJsonDocument<1024> updateJson;
     DeserializationError jsonError = deserializeJson(updateJson, updateClient.getString());
     updateClient.end();
 
@@ -116,7 +116,7 @@ bool otaUpdateCheck()
             // }
         }
         LOG_VERBOSE(TAG_OTA, F(D_OTA_CHECK_COMPLETE));
-    }
+    }*/
     return true;
 }
 
@@ -199,11 +199,10 @@ void otaEverySecond(void)
 }
 #endif // HASP_USE_ARDUINOOTA
 
-
 void otaSetup(void)
 {
 #if ESP_ARDUINO_VERSION_MAJOR >= 2
-    /* This method is similar to the single root certificate verfication, but it uses a standard set of root
+    /* This method is similar to the single root certificate verification, but it uses a standard set of root
      * certificates from Mozilla to authenticate against. This allows the client to connect to all public SSL
      * servers. */
     secureClient.setCACertBundle(rootca_crt_bundle_start);
@@ -212,9 +211,9 @@ void otaSetup(void)
     secureClient.setTimeout(12); // timeout argument is defined in seconds
 
 #if HASP_USE_ARDUINOOTA > 0
-    if(strlen(otaUrl.c_str())) {
+    /*if(strlen(otaUrl.c_str())) {
         LOG_INFO(TAG_OTA, otaUrl.c_str());
-    }
+    }*/
 
     if(arduinoOtaPort > 0) {
         ArduinoOTA.onStart(ota_on_start);
@@ -371,7 +370,7 @@ bool otaGetConfig(const JsonObject& settings)
     Preferences preferences;
     bool changed = false;
 
-    preferences.begin("ota", true);
+    nvs_user_begin(preferences,"ota", true);
     settings["url"]      = preferences.getString("url", HASP_OTA_URL);
     settings["redirect"] = preferences.getUInt("redirect", 0);
     preferences.end();
@@ -394,7 +393,7 @@ bool otaGetConfig(const JsonObject& settings)
 bool otaSetConfig(const JsonObject& settings)
 {
     Preferences preferences;
-    preferences.begin("ota", false);
+    nvs_user_begin(preferences,"ota", false);
 
     configOutput(settings, TAG_OTA);
     bool changed = false;

@@ -23,9 +23,9 @@ marks:
       vals:
         - btnmatrix
         - cpicker
-        - table
+        #- table
         - tabview
-        - chart
+        #- chart
         - gauge
         - btn
         - label
@@ -38,7 +38,7 @@ marks:
         - obj
         - linemeter
         - dropdown
-        - calendar
+        #- calendar
         - spinner
         - roller
   - parametrize:
@@ -102,6 +102,7 @@ stages:
     mqtt_publish:
       topic: hasp/{plate}/command/jsonl
       json:
+        page: 1
         obj: "{obj}"
         id: 1
         x: 128

@@ -1,10 +1,10 @@
-/* MIT License - Copyright (c) 2019-2022 Francis Van Roie
+/* MIT License - Copyright (c) 2019-2024 Francis Van Roie
    For full license information read the LICENSE file in the project folder */
 
 #include "hasp_conf.h"
 
 #if HASP_USE_MQTT > 0
-#ifdef USE_PUBSUBCLIENT
+#ifdef HASP_USE_PUBSUBCLIENT
 
 #include "PubSubClient.h"
 
@@ -14,7 +14,10 @@
 
 #if defined(ARDUINO_ARCH_ESP32)
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 WiFiClient mqttNetworkClient;
+// WiFiClientSecure mqttNetworkClient;
+extern const uint8_t rootca_crt_bundle_start[] asm("_binary_data_cert_x509_crt_bundle_bin_start");
 #elif defined(ARDUINO_ARCH_ESP8266)
 #include <ESP8266WiFi.h>
 #include <EEPROM.h>
@@ -44,6 +47,7 @@ EthernetClient mqttNetworkClient;
 
 char mqttNodeTopic[24];
 char mqttGroupTopic[24];
+char mqttClientId[64];
 bool mqttEnabled        = false;
 bool mqttHAautodiscover = true;
 uint32_t mqttPublishCount;
@@ -105,13 +109,13 @@ bool mqtt_send_lwt(bool online)
     return res;
 }
 
-int mqtt_send_object_state(uint8_t pageid, uint8_t btnid, const char* payload)
-{
-    char tmp_topic[strlen(mqttNodeTopic) + 16];
-    snprintf_P(tmp_topic, sizeof(tmp_topic), PSTR("%s" MQTT_TOPIC_STATE "/" HASP_OBJECT_NOTATION), mqttNodeTopic,
-               pageid, btnid);
-    return mqttPublish(tmp_topic, payload, false);
-}
+// int mqtt_send_object_state(uint8_t pageid, uint8_t btnid, const char* payload)
+// {
+//     char tmp_topic[strlen(mqttNodeTopic) + 16];
+//     snprintf_P(tmp_topic, sizeof(tmp_topic), PSTR("%s" MQTT_TOPIC_STATE "/" HASP_OBJECT_NOTATION), mqttNodeTopic,
+//                pageid, btnid);
+//     return mqttPublish(tmp_topic, payload, false);
+// }
 
 int mqtt_send_state(const char* subtopic, const char* payload)
 {
@@ -122,8 +126,8 @@ int mqtt_send_state(const char* subtopic, const char* payload)
 
 int mqtt_send_discovery(const char* payload, size_t len)
 {
-    char tmp_topic[20];
-    snprintf_P(tmp_topic, sizeof(tmp_topic), PSTR(MQTT_PREFIX "/" MQTT_TOPIC_DISCOVERY));
+    char tmp_topic[128];
+    snprintf_P(tmp_topic, sizeof(tmp_topic), PSTR(MQTT_PREFIX "/" MQTT_TOPIC_DISCOVERY "/%s"),haspDevice.get_hardware_id());
     return mqttPublish(tmp_topic, payload, len, false);
 }
 
@@ -215,11 +219,13 @@ static void mqttSubscribeTo(const char* topic)
 void mqttStart()
 {
     char buffer[64];
-    char mqttClientId[64];
     char lastWillPayload[8];
     static uint8_t mqttReconnectCount = 0;
     //   bool mqttFirstConnect             = true;
 
+    // mqttNetworkClient.setCACertBundle(rootca_crt_bundle_start);
+    // mqttNetworkClient.setInsecure();
+    mqttNetworkClient.setTimeout(12);
     mqttClient.setServer(mqttServer, mqttPort);
     // mqttClient.setSocketTimeout(10); //in seconds
 
@@ -228,7 +234,9 @@ void mqttStart()
         String mac = halGetMacAddress(3, "");
         mac.toLowerCase();
         memset(mqttClientId, 0, sizeof(mqttClientId));
-        snprintf_P(mqttClientId, sizeof(mqttClientId), PSTR(D_MQTT_DEFAULT_NAME), mac.c_str());
+        snprintf_P(mqttClientId, sizeof(mqttClientId), haspDevice.get_hostname());
+        size_t len = strlen(mqttClientId);
+        snprintf_P(mqttClientId + len, sizeof(mqttClientId) - len, PSTR("_%s"), mac.c_str());
         LOG_INFO(TAG_MQTT, mqttClientId);
     }
 
@@ -249,9 +257,16 @@ void mqttStart()
             case MQTT_CONNECTION_LOST:
                 LOG_WARNING(TAG_MQTT, F("Connection lost"));
                 break;
-            case MQTT_CONNECT_FAILED:
+            case MQTT_CONNECT_FAILED: {
                 LOG_WARNING(TAG_MQTT, F("Connection failed"));
+                char err_buf[100];
+                // if(mqttNetworkClient.lastError(err_buf, 100) < 0) {
+                //     Serial.println(err_buf);
+                // } else {
+                Serial.println("Connection error");
+                // }
                 break;
+            }
             case MQTT_DISCONNECTED:
                 snprintf_P(buffer, sizeof(buffer), PSTR(D_MQTT_DISCONNECTED));
                 break;
@@ -375,17 +390,13 @@ void mqttStop()
 void mqtt_get_info(JsonDocument& doc)
 {
     char buffer[64];
-    String mac((char*)0);
-    mac.reserve(64);
+    // String mac((char*)0);
+    // mac.reserve(64);
 
     JsonObject info          = doc.createNestedObject(F("MQTT"));
     info[F(D_INFO_SERVER)]   = mqttServer;
     info[F(D_INFO_USERNAME)] = mqttUsername;
-
-    mac = halGetMacAddress(3, "");
-    mac.toLowerCase();
-    snprintf_P(buffer, sizeof(buffer), PSTR("%s-%s"), haspDevice.get_hostname(), mac.c_str());
-    info[F(D_INFO_CLIENTID)] = buffer;
+    info[F(D_INFO_CLIENTID)] = mqttClientId;
 
     switch(mqttClient.state()) {
         case MQTT_CONNECT_UNAUTHORIZED:
@@ -395,10 +406,10 @@ void mqtt_get_info(JsonDocument& doc)
             snprintf_P(buffer, sizeof(buffer), PSTR(D_NETWORK_CONNECTION_FAILED));
             break;
         case MQTT_DISCONNECTED:
-            snprintf_P(buffer, sizeof(buffer), PSTR(D_INFO_DISCONNECTED));
+            snprintf_P(buffer, sizeof(buffer), PSTR(D_SERVICE_DISCONNECTED));
             break;
         case MQTT_CONNECTED:
-            snprintf_P(buffer, sizeof(buffer), PSTR(D_INFO_CONNECTED));
+            snprintf_P(buffer, sizeof(buffer), PSTR(D_SERVICE_CONNECTED));
             break;
         case MQTT_CONNECTION_TIMEOUT:
         case MQTT_CONNECTION_LOST:
@@ -407,7 +418,7 @@ void mqtt_get_info(JsonDocument& doc)
         case MQTT_CONNECT_UNAVAILABLE:
         case MQTT_CONNECT_BAD_CREDENTIALS:
         default:
-            snprintf_P(buffer, sizeof(buffer), PSTR(D_INFO_DISCONNECTED " (%d)"), mqttClient.state());
+            snprintf_P(buffer, sizeof(buffer), PSTR(D_SERVICE_DISCONNECTED " (%d)"), mqttClient.state());
             break;
     }
     info[F(D_INFO_STATUS)] = buffer;
@@ -448,7 +459,7 @@ bool mqttGetConfig(const JsonObject& settings)
  *
  * Read the settings from json and sets the application variables.
  *
- * @note: data pixel should be formated to uint32_t RGBA. Imagemagick requirements.
+ * @note: data pixel should be formatted to uint32_t RGBA. Imagemagick requirements.
  *
  * @param[in] settings    JsonObject with the config settings.
  **/
